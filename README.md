@@ -3,7 +3,7 @@ sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for
 
 sineLab is short for sine wave laboratory. There are 88 MIDI keys, ranging from A0 to C8, all with a specific number of sine wave oscillators allocated to them. The formula for determining the number of sine wave oscillators for a specific key between A0 and C8 is 20000/fundamental, or 20000 Hz, divided by the fundamental frequency of each MIDI key between A0 and C8, assuming equal temperament. A0 has 727 sine wave oscillators, while C8 has only 4. 
 
-sineLab has no FX, filters, modulation, apreggiation, sequencing, automation, MIDI CCs, or audio files. There are only 12843 sine wave oscillators across 88 keys, and ways to make fast organized changes, but nothing else. THere are only sine wave oscillators, and every oscillator is identical, only differing in default frequency. Every oscillator can be toggled, altered in amplitude, cents deviation, starting phase, stereo panned, and every oscillator has it's own ADSR. 
+sineLab has no FX, filters, modulation, apreggiation, sequencing, automation, MIDI CCs, or audio files. There are only 12843 sine wave oscillators across 88 keys, and ways to make fast organized changes, but nothing else. There are only sine wave oscillators, and every oscillator is identical, only differing in default frequency. Every oscillator can be toggled, altered in amplitude, cents deviation, starting phase, stereo pan position, and every oscillator has it's own ADSR. 
 
 sineLab has 2 methods of editing; global mode, or changes across keys, and key mode, or focus on the harmonics of a single key. The point of sineLab is to have many oscillators, but be able to make fast and organized changes across many.
 
@@ -31,9 +31,9 @@ The top left black box represents the MIDI number, thus 1 represents A0, 88 repr
 
 The 1, 2, 3, ||, e buttons are buttons that allow one to interpolate the duty cycle between the chosen endpoints. 
 
-1/[n*n] button sets the amplitudes of every key to be 1 divided by it's harmonic number, but squared. Thus the first harmonic gets 1 amplitude, the second gets 1/4, third gets 1/9, etc. 
+1/[n*n] button sets the amplitudes of every harmonic to be 1 divided by it's harmonic number squared. Thus the first harmonic gets 1 amplitude, the second gets 1/4, third gets 1/9, etc. 
 
-1/n 1/[n*n] button sets the amplitudes of every key to be 1 divided by it's harmonic number. Thus the first harmonic gets 1 amplitude, the second gets 1/2, third gets 1/2, etc.
+1/n button sets the amplitudes of every harmonic to be 1 divided by harmonic number. Thus the first harmonic gets 1 amplitude, the second gets 1/2, third gets 1/2, etc.
 
 TAPER ACT is a toggle in the global AMP tab that multiplies (k - n + 1)/k to every CURRENTLY ACTIVE harmonic of every key. Where k is the active harmonic count for that key, n is the harmonic number. 
 
@@ -51,11 +51,11 @@ The graph has the horizontal axis to be the MIDI number, and the vertical axis r
 
 
 TUNE
-STRETCH's boxes behave similarly to AMP's; Left text box represents A0. Right, C8. What happens in stretch is one cent deviation value is added. Meaning if I type in 50 in the left box, +50 cents will be applied to every harmonic in A0. The graph only shows and allows plus or minus 50 cents for stretch. 
+STRETCH's boxes behave similarly to AMP's; Left text box represents A0. Right, C8. What happens in stretch is one cent deviation value is added. Meaning if I type in 50 in the left box, +50 cents will be applied to every harmonic in A0. The graph only shows and allows plus or minus 50 cents for stretch. Stretch here does not introduce inharmonicity. 
 
 The 5 interpolation buttons interpolate between the endpoints in cent deviation.
 
-II of TUNE represents inharmonicity. The formula for inharmonicity used in sineLab is n(f_0)(sqrt[1 + Bn^2]), where B is the inharmonicity coefficient. B ranges between +-0.0015. By default, there is no inharmonicity, thus leaving this at 0 will result in a tuning most synths already assume. 
+II of TUNE represents inharmonicity. The formula for inharmonicity used in sineLab is n(f_0)(sqrt[1 + Bn^2]), where B is the inharmonicity coefficient. B ranges between +-0.0015. If B is 0, there is no inharmonicity. Negative inharmonicity in sineLab is simply positive inharmonicity, but flipped downward. This is because the formula cannot actually accept a negative B value. And thus is supposed to compute the normal inharmonicity, but then reflect it below 0. 
 
 The bottom right box in TUNE represents the cent deviation applied to every harmonic.
 
