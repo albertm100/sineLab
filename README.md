@@ -2,7 +2,7 @@
 sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE and Claude.
 
 *Note
-sineLab has only been tested using macOS. Further, collapsing the DAW's plugin window for some reason obstructs the PAN and ATTACK tabs. Thus, leaving the window fully expanded results in no obstruction.
+sineLab has only been tested using macOS. sineLab is also quite computationally heavy, but this is directly proportional to how many oscillators an active MIDI key has. Further, collapsing the DAW's plugin window for some reason obstructs the PAN and ATTACK tabs. Thus, leaving the window fully expanded results in no obstruction.
 
 sineLab is short for sine wave laboratory. There are 88 MIDI keys, ranging from A0 to C8, all with a specific number of sine wave oscillators allocated to them. The formula for determining the number of sine wave oscillators for a specific key between A0 and C8 is 20000/fundamental, or 20000 Hz, divided by the fundamental frequency of each MIDI key between A0 and C8, assuming equal temperament. A0 has 727 sine wave oscillators, while C8 has only 4. 
 
