@@ -1,11 +1,14 @@
 # sineLab
 sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE and Claude.
 
+*Note
+sineLab has only been tested using macOS. Further, collapsing the DAW's plugin window for some reason obstructs the PAN and ATTACK tabs. Thus, leaving the window fully expanded results in no obstruction.
+
 sineLab is short for sine wave laboratory. There are 88 MIDI keys, ranging from A0 to C8, all with a specific number of sine wave oscillators allocated to them. The formula for determining the number of sine wave oscillators for a specific key between A0 and C8 is 20000/fundamental, or 20000 Hz, divided by the fundamental frequency of each MIDI key between A0 and C8, assuming equal temperament. A0 has 727 sine wave oscillators, while C8 has only 4. 
 
-sineLab has no FX, filters, modulation, apreggiation, sequencing, automation, MIDI CCs, or audio files. There are only 12843 sine wave oscillators across 88 keys, and ways to make fast organized changes, but nothing else. There are only sine wave oscillators, and every oscillator is identical, only differing in default frequency. Every oscillator can be toggled, altered in amplitude, cents deviation, starting phase, stereo pan position, and every oscillator has it's own ADSR. 
+sineLab has no FX, filters, modulation, apreggiation, sequencing, automation, MIDI CCs, or audio files. There are only 12843 sine wave oscillators across 88 keys, and ways to make fast organized changes, but nothing else. There are only sine wave oscillators, and every oscillator is identical, only differing in default frequency. 
 
-sineLab has 2 methods of editing; global mode, or changes across keys, and key mode, or focus on the harmonics of a single key. The point of sineLab is to have many oscillators, but be able to make fast and organized changes across many.
+sineLab has 2 methods of editing; global mode, or changes across keys, and key mode, or focus on the harmonics of a single key. 
 
 sineLab by default opens in global mode. Thus, when NO key is selected at the bottom, sineLab assumes you want to make changes across the keyboard. sineLab has 9 tabs: TOGGLE, AMP, PHASE, PAN, ATTACK, DECAY, SUSTAIN, RELEASE. 
 
@@ -14,15 +17,13 @@ sineLab by default opens in global mode. Thus, when NO key is selected at the bo
 TOGGLE
 Toggle tab shows the currently active harmonics. The upper left box represents the amount of active harmonics for A0, and the right represents the amount of harmonics for C8. The horizontal axis of the global toggle tab represents MIDI keys from A0 to C8. The vertical axis represents the number of harmonics per key. The bottom row is the 1st harmonic for every key, the 2nd is the second, and so on. The graph is simply a way to visually see which harmonics are currently ON. 
 
-The 1, 3, and e buttons simply represent linear, cubic, or exponential interpolation. THe steepness of e ranges from +-50. 
+1. The 1, 3, and e buttons simply represent linear, cubic, or exponential interpolation. THe steepness of e ranges from +-50. 
+2. Primes toggle toggles on or off the prime-numbered harmonics. Thus, 2, 3, 5, 7, 11, 13, 17, 23, 29, etc. are toggled. 
+3. Evens toggle toggles on or off the even-numbered harmonics. 2, 4, 6, 8, etc. 
+4. 1st Harm toggles on or off the 1st harmonic, or fundamental of every key. 
+5. The blank checkbox represents toggling ALL harmonics on or off.
 
-Primes toggle toggles on or off the prime-numbered harmonics. Thus, 2, 3, 5, 7, 11, 13, 17, 23, 29, etc. are toggled. 
 
-Evens toggle toggles on or off the even-numbered harmonics. 2, 4, 6, 8, etc. 
-
-1st Harm toggles on or off the 1st harmonic, or fundamental of every key. 
-
-The blank checkbox represents toggling ALL harmonics on or off. 
 
 
 
