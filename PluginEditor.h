@@ -10,11 +10,18 @@
 class ThinSliderLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    float trackThickness = 2.0f;
+    bool  fixedThumbRadius = false;
+
+    int getSliderThumbRadius (juce::Slider& s) override
+    {
+        return fixedThumbRadius ? 5 : juce::LookAndFeel_V4::getSliderThumbRadius (s);
+    }
+
     void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                             float sliderPos, float minSliderPos, float maxSliderPos,
                             const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
-        auto trackThickness = 2.0f;
 
         if (style == juce::Slider::LinearVertical)
         {
@@ -83,6 +90,7 @@ public:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void paintToggleGraph (juce::Graphics& g, int componentWidth, int componentHeight);
 
+
 private:
     struct ToggleGraphComponent : public juce::Component
     {
@@ -97,6 +105,9 @@ private:
     juce::Viewport        toggleGraphViewport;
     SineLabAudioProcessor& audioProcessor;
     ThinSliderLookAndFeel thinSliderLookAndFeel;
+    ThinSliderLookAndFeel ampSubTabSliderLookAndFeel;
+    ThinSliderLookAndFeel tuningSubTabSliderLookAndFeel;
+    ThinSliderLookAndFeel decaySubTabSliderLookAndFeel;
     juce::OwnedArray<InvisibleKeyButton> keyButtons;
     int selectedKey = -1;
     int hoveredKey = -1;
@@ -113,10 +124,13 @@ private:
     
     void paintTuningGraph (juce::Graphics& g);
     void paintAttackGraph (juce::Graphics& g);
+    void paintSustainGraph (juce::Graphics& g);
+    void applyShapeToSustain (std::function<double(double)> shapeFunction);
     void paintDecayGraph (juce::Graphics& g);
     void paintReleaseGraph (juce::Graphics& g);
     void paintAmpGraph (juce::Graphics& g);
     void paintKeyVolumeGraph (juce::Graphics& g);
+    void paintEvenMorphGraph (juce::Graphics& g);
     void paintBarGraph (juce::Graphics& g, std::function<double(int)> valueGetter, double yMax, bool drawTrendline = true);
     
     void setupSlider (juce::Slider& slider, juce::Slider::SliderStyle style, double minValue, double maxValue, double interval, std::function<void()> onChange);
@@ -141,8 +155,7 @@ private:
     
 
     InvisibleKeyButton ampTabButton;
-    juce::TextButton ampSubTabOneButton;
-    juce::TextButton ampSubTabTwoButton;
+    juce::Slider ampSubTabSlider;
     juce::Viewport amplitudeViewport;
     juce::Component amplitudeContainer;
     juce::OwnedArray<juce::Slider> amplitudeSliders;
@@ -159,6 +172,8 @@ private:
     void ampC8Applied();
     juce::TextEditor ampA0UpperTextBox;
     juce::TextEditor ampC8UpperTextBox;
+    juce::TextEditor evenMorphA0UpperTextBox;
+    juce::TextEditor evenMorphC8UpperTextBox;
 
     juce::ToggleButton normalizationCheckbox;
     void normalizationToggled();
@@ -171,9 +186,12 @@ private:
     void recalculateAllKeyVolumes();
     void reapplyDecayShapeForKey (int key);
     
+    juce::TextButton applyOneOverSqrtNButton;
+    void applyOneOverSqrtNClicked();
+
     juce::TextButton applyOneOverNButton;
     void applyOneOverNClicked();
-    
+
     juce::TextButton applyOneOverNSquaredButton;
         void applyOneOverNSquaredClicked();
     
@@ -293,12 +311,12 @@ private:
     
         void expSteepnessApplied();
     
-        juce::TextButton tuningSubTabOneButton;
-        juce::TextButton tuningSubTabTwoButton;
+        juce::Slider tuningSubTabSlider;
 
         void applyShapeToToggle (std::function<double(double)> shapeFunction);
         void applyShapeToAmp (std::function<double(double)> shapeFunction);
         void applyShapeToKeyVolume (std::function<double(double)> shapeFunction);
+        void applyShapeToEvenMorph (std::function<double(double)> shapeFunction);
         void applyShapeToStretch (std::function<double(double)> shapeFunction);
         void applyShapeToInharmonicity (std::function<double(double)> shapeFunction);
         void applyShapeToPhase (std::function<double(double)> shapeFunction);
@@ -346,6 +364,16 @@ private:
     
     ScrollableTextEditor globalSustainTextBox;
     void globalSustainApplied();
+    juce::TextEditor     sustainA0UpperTextBox;
+    ScrollableTextEditor sustainA0TextBox;
+    juce::TextEditor     sustainC8UpperTextBox;
+    ScrollableTextEditor sustainC8TextBox;
+    juce::TextButton     sustainLinearButton;
+    juce::TextButton     sustainSquaredButton;
+    juce::TextButton     sustainCubicButton;
+    juce::TextButton     sustainAbsValueButton;
+    juce::TextButton     sustainExpButton;
+    ScrollableTextEditor sustainExpKTextBox;
     ScrollableTextEditor globalDecayTextBox;
     void globalDecayApplied();
     ScrollableTextEditor decayA0TextBox;
@@ -354,8 +382,7 @@ private:
     void decayC8Applied();
     ScrollableTextEditor decayIIA0TextBox;
     std::function<double(double)> lastDecayIIShape { [] (double t) { return (t + 1.0) / 2.0; } };
-    juce::TextButton decaySubTabOneButton;
-    juce::TextButton decaySubTabTwoButton;
+    juce::Slider decaySubTabSlider;
     ScrollableTextEditor globalReleaseTextBox;
     void globalReleaseApplied();
     ScrollableTextEditor releaseA0TextBox;

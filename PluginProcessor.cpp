@@ -21,6 +21,7 @@ SineLabAudioProcessor::SineLabAudioProcessor()
                        )
 #endif
 {
+    for (int i = 0; i < 88; ++i) evenMorphStrength[i] = 1.0;
     harmonicCounts.resize (88);
 
         for (int key = 0; key < 88; ++key)
@@ -414,6 +415,7 @@ void SineLabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
             keyXml->setAttribute ("keyVolume", keyVolume[key]);
             keyXml->setAttribute ("inharmonicityB", keyInharmonicityB[key]);
             keyXml->setAttribute ("dutyCycle", keyDutyCycle[key]);
+            keyXml->setAttribute ("evenMorphStrength", evenMorphStrength[key]);
         }
     
     
@@ -428,7 +430,12 @@ void SineLabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     globalXml->setAttribute ("globalPan", globalPanValue);
     globalXml->setAttribute ("lastAppliedPanWidth", lastAppliedPanWidth);
     globalXml->setAttribute ("globalAttack", globalAttackValue);
-    globalXml->setAttribute ("globalSustain", globalSustainValue);
+    globalXml->setAttribute ("globalSustain",             globalSustainValue);
+    globalXml->setAttribute ("lastAppliedSustainStartKey", lastAppliedSustainStartKey);
+    globalXml->setAttribute ("lastAppliedSustainA0",       lastAppliedSustainA0);
+    globalXml->setAttribute ("lastAppliedSustainEndKey",   lastAppliedSustainEndKey);
+    globalXml->setAttribute ("lastAppliedSustainC8",       lastAppliedSustainC8);
+    globalXml->setAttribute ("lastAppliedExpKSustain",     lastAppliedExpKSustain);
     globalXml->setAttribute ("globalDecay", globalDecayValue);
     globalXml->setAttribute ("globalRelease", globalReleaseValue);
     globalXml->setAttribute ("normalizationEnabled", normalizationEnabled);
@@ -473,7 +480,12 @@ void SineLabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     globalXml->setAttribute ("lastAppliedPhaseA0",     lastAppliedPhaseA0);
     globalXml->setAttribute ("lastAppliedPhaseC8",     lastAppliedPhaseC8);
     globalXml->setAttribute ("lastAppliedPhaseRand",   lastAppliedPhaseRand);
-    globalXml->setAttribute ("lastAppliedPhaseEvens",  lastAppliedPhaseEvens);
+    globalXml->setAttribute ("lastAppliedPhaseEvens",       lastAppliedPhaseEvens);
+    globalXml->setAttribute ("lastAppliedExpKEvenMorph",    lastAppliedExpKEvenMorph);
+    globalXml->setAttribute ("lastAppliedEvenMorphStartKey",lastAppliedEvenMorphStartKey);
+    globalXml->setAttribute ("lastAppliedEvenMorphEndKey",  lastAppliedEvenMorphEndKey);
+    globalXml->setAttribute ("lastAppliedEvenMorphA0",      lastAppliedEvenMorphA0);
+    globalXml->setAttribute ("lastAppliedEvenMorphC8",      lastAppliedEvenMorphC8);
 
         copyXmlToBinary (xml, destData);
     
@@ -501,7 +513,12 @@ void SineLabAudioProcessor::setStateInformation (const void* data, int sizeInByt
         globalPanValue = globalXml->getDoubleAttribute ("globalPan", 0.0);
         lastAppliedPanWidth = juce::jlimit (-1.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedPanWidth", 1.0));
         globalAttackValue = globalXml->getDoubleAttribute ("globalAttack", 0.0001);
-        globalSustainValue = globalXml->getDoubleAttribute ("globalSustain", 1.0);
+        globalSustainValue          = globalXml->getDoubleAttribute ("globalSustain", 1.0);
+        lastAppliedSustainStartKey  = juce::jlimit (0, 87, globalXml->getIntAttribute    ("lastAppliedSustainStartKey", 0));
+        lastAppliedSustainA0        = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedSustainA0",  1.0));
+        lastAppliedSustainEndKey    = juce::jlimit (0, 87, globalXml->getIntAttribute    ("lastAppliedSustainEndKey",  87));
+        lastAppliedSustainC8        = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedSustainC8",  1.0));
+        lastAppliedExpKSustain      = juce::jlimit (-50, 50, globalXml->getIntAttribute  ("lastAppliedExpKSustain",   0));
         globalDecayValue = globalXml->getDoubleAttribute ("globalDecay", 0.0001);
         globalReleaseValue = globalXml->getDoubleAttribute ("globalRelease", 0.0001);
         normalizationEnabled = globalXml->getBoolAttribute ("normalizationEnabled", false);
@@ -545,7 +562,12 @@ void SineLabAudioProcessor::setStateInformation (const void* data, int sizeInByt
         lastAppliedPhaseA0   = juce::jlimit (1, 360, globalXml->getIntAttribute ("lastAppliedPhaseA0", 1));
         lastAppliedPhaseC8   = juce::jlimit (1, 360, globalXml->getIntAttribute ("lastAppliedPhaseC8", 1));
         lastAppliedPhaseRand  = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedPhaseRand", 0.0));
-        lastAppliedPhaseEvens = juce::jlimit (1, 360, globalXml->getIntAttribute ("lastAppliedPhaseEvens", 1));
+        lastAppliedPhaseEvens        = juce::jlimit (1, 360, globalXml->getIntAttribute ("lastAppliedPhaseEvens", 1));
+        lastAppliedExpKEvenMorph     = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKEvenMorph", 4));
+        lastAppliedEvenMorphStartKey = juce::jlimit (0, 87,   globalXml->getIntAttribute    ("lastAppliedEvenMorphStartKey", 0));
+        lastAppliedEvenMorphEndKey   = juce::jlimit (0, 87,   globalXml->getIntAttribute    ("lastAppliedEvenMorphEndKey",   87));
+        lastAppliedEvenMorphA0       = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedEvenMorphA0",       1.0));
+        lastAppliedEvenMorphC8       = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedEvenMorphC8",       0.0));
         
             }
     
@@ -560,7 +582,8 @@ void SineLabAudioProcessor::setStateInformation (const void* data, int sizeInByt
                 {
                     keyVolume[key] = childXml->getDoubleAttribute ("keyVolume", 1.0);
                     keyInharmonicityB[key] = juce::jlimit (-0.0015, 0.0015, childXml->getDoubleAttribute ("inharmonicityB", 0.0));
-                    keyDutyCycle[key] = juce::jlimit (0.0, 0.5, childXml->getDoubleAttribute ("dutyCycle", 0.0));
+                    keyDutyCycle[key]       = juce::jlimit (0.0, 0.5, childXml->getDoubleAttribute ("dutyCycle", 0.0));
+                    evenMorphStrength[key]  = juce::jlimit (0.0, 1.0, childXml->getDoubleAttribute ("evenMorphStrength", 1.0));
                     
                 }
             }
@@ -604,7 +627,36 @@ void SineLabAudioProcessor::setStateInformation (const void* data, int sizeInByt
         }
     }
 
+    updateActiveRanks();
     sendChangeMessage();
+}
+
+void SineLabAudioProcessor::updateActiveRanks()
+{
+    for (int key = 0; key < 88; ++key)
+    {
+        int startIndex = keyStartIndex[key];
+        int count      = harmonicCounts[key];
+
+        int activeCount = 0;
+        for (int h = 0; h < count; ++h)
+        {
+            auto& osc = oscillators[startIndex + h];
+            if (! osc.manuallyMuted && ! osc.aboveCeiling)
+                ++activeCount;
+        }
+
+        int activeRank = 0;
+        for (int h = 0; h < count; ++h)
+        {
+            auto& osc = oscillators[startIndex + h];
+            osc.activeCount = activeCount;
+            if (! osc.manuallyMuted && ! osc.aboveCeiling)
+                osc.activeRank = activeRank++;
+            else
+                osc.activeRank = 0;
+        }
+    }
 }
 
 //==============================================================================

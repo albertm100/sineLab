@@ -8,7 +8,7 @@
 
 static void applyPulseWaveToKey (SineLabAudioProcessor&, int, double);
 static bool isPrime (int n);
-static void updateActiveRanks (SineLabAudioProcessor&);
+
 
 static void drawSmoothedPath (juce::Graphics& g, const juce::Array<juce::Point<float>>& pts, float thickness = 2.0f)
 {
@@ -34,7 +34,7 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
     setSize (792, 500);
 
     audioProcessor.addChangeListener (this);
-    updateActiveRanks (audioProcessor);
+    audioProcessor.updateActiveRanks();
 
     for (int i = 0; i < 88; ++i)
     {
@@ -166,7 +166,7 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
                     for (int h = newVal - 1; h < c; h += newVal)
                         audioProcessor.oscillators[s + h].manuallyMuted = true;
                 }
-                updateActiveRanks (audioProcessor);
+                audioProcessor.updateActiveRanks();
                 recalculateAllKeyVolumes();
                 repaint();
                 if (selectedKey != -1 && activeTab == 0)
@@ -177,45 +177,55 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
         },
         nullptr);
 
-    addAndMakeVisible (ampSubTabOneButton);
-    ampSubTabOneButton.setButtonText ("I");
-    ampSubTabOneButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
-    ampSubTabOneButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
-    ampSubTabOneButton.setVisible (false);
-    ampSubTabOneButton.onClick = [this]
+    ampSubTabSliderLookAndFeel.trackThickness   = 1.0f;
+    ampSubTabSliderLookAndFeel.fixedThumbRadius = true;
+
+    addAndMakeVisible (ampSubTabSlider);
+    ampSubTabSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    ampSubTabSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    ampSubTabSlider.setRange (1.0, 3.0, 1.0);
+    ampSubTabSlider.setValue (1.0, juce::dontSendNotification);
+    ampSubTabSlider.setColour (juce::Slider::thumbColourId, juce::Colours::black);
+    ampSubTabSlider.setLookAndFeel (&ampSubTabSliderLookAndFeel);
+    ampSubTabSlider.setVisible (false);
+    ampSubTabSlider.onValueChange = [this]
     {
-        activeAmpSubTab = 1;
-        ampA0TextBox.setText (juce::String (audioProcessor.lastAppliedAmpA0, 4), juce::dontSendNotification);
-        ampC8TextBox.setText (juce::String (audioProcessor.lastAppliedAmpC8, 4), juce::dontSendNotification);
-        ampA0UpperTextBox.setText (juce::String (audioProcessor.lastAppliedAmpStartKey + 1), juce::dontSendNotification);
-        ampC8UpperTextBox.setText (juce::String (audioProcessor.lastAppliedAmpEndKey + 1), juce::dontSendNotification);
-        globalAmpTextBox.setText (juce::String (audioProcessor.globalAmpValue, 4), juce::dontSendNotification);
-        expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKAmp), juce::dontSendNotification);
+        int newTab = (int) ampSubTabSlider.getValue();
+        if (newTab == activeAmpSubTab) return;
+        activeAmpSubTab = newTab;
+        if (activeAmpSubTab == 1)
+        {
+            ampA0TextBox.setText (juce::String (audioProcessor.lastAppliedAmpA0, 4), juce::dontSendNotification);
+            ampC8TextBox.setText (juce::String (audioProcessor.lastAppliedAmpC8, 4), juce::dontSendNotification);
+            ampA0UpperTextBox.setText (juce::String (audioProcessor.lastAppliedAmpStartKey + 1), juce::dontSendNotification);
+            ampC8UpperTextBox.setText (juce::String (audioProcessor.lastAppliedAmpEndKey + 1), juce::dontSendNotification);
+            globalAmpTextBox.setText (juce::String (audioProcessor.globalAmpValue, 4), juce::dontSendNotification);
+            expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKAmp), juce::dontSendNotification);
+        }
+        else if (activeAmpSubTab == 2)
+        {
+            audioProcessor.lastAppliedKeyVolumeA0 = audioProcessor.keyVolume[audioProcessor.lastAppliedKeyVolumeStartKey];
+            audioProcessor.lastAppliedKeyVolumeC8 = audioProcessor.keyVolume[audioProcessor.lastAppliedKeyVolumeEndKey];
+            ampA0TextBox.setText (juce::String (audioProcessor.lastAppliedKeyVolumeA0, 4), juce::dontSendNotification);
+            ampC8TextBox.setText (juce::String (audioProcessor.lastAppliedKeyVolumeC8, 4), juce::dontSendNotification);
+            ampA0UpperTextBox.setText (juce::String (audioProcessor.lastAppliedKeyVolumeStartKey + 1), juce::dontSendNotification);
+            ampC8UpperTextBox.setText (juce::String (audioProcessor.lastAppliedKeyVolumeEndKey + 1), juce::dontSendNotification);
+            globalAmpTextBox.setText (juce::String (audioProcessor.globalAmpValue, 4), juce::dontSendNotification);
+            expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKKeyVolume), juce::dontSendNotification);
+        }
+        else if (activeAmpSubTab == 3)
+        {
+            expSteepnessTextBox.setText      (juce::String (audioProcessor.lastAppliedExpKEvenMorph), juce::dontSendNotification);
+            evenMorphA0UpperTextBox.setText  (juce::String (audioProcessor.lastAppliedEvenMorphStartKey + 1), juce::dontSendNotification);
+            evenMorphC8UpperTextBox.setText  (juce::String (audioProcessor.lastAppliedEvenMorphEndKey   + 1), juce::dontSendNotification);
+            ampA0TextBox.setText (juce::String (audioProcessor.lastAppliedEvenMorphA0, 4), juce::dontSendNotification);
+            ampC8TextBox.setText (juce::String (audioProcessor.lastAppliedEvenMorphC8, 4), juce::dontSendNotification);
+        }
         wireShapeButtons();
         updateControlVisibility();
         repaint();
     };
 
-    addAndMakeVisible (ampSubTabTwoButton);
-    ampSubTabTwoButton.setButtonText ("II");
-    ampSubTabTwoButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
-    ampSubTabTwoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
-    ampSubTabTwoButton.setVisible (false);
-    ampSubTabTwoButton.onClick = [this]
-    {
-        activeAmpSubTab = 2;
-        audioProcessor.lastAppliedKeyVolumeA0 = audioProcessor.keyVolume[audioProcessor.lastAppliedKeyVolumeStartKey];
-        audioProcessor.lastAppliedKeyVolumeC8 = audioProcessor.keyVolume[audioProcessor.lastAppliedKeyVolumeEndKey];
-        ampA0TextBox.setText (juce::String (audioProcessor.lastAppliedKeyVolumeA0, 4), juce::dontSendNotification);
-        ampC8TextBox.setText (juce::String (audioProcessor.lastAppliedKeyVolumeC8, 4), juce::dontSendNotification);
-        ampA0UpperTextBox.setText (juce::String (audioProcessor.lastAppliedKeyVolumeStartKey + 1), juce::dontSendNotification);
-        ampC8UpperTextBox.setText (juce::String (audioProcessor.lastAppliedKeyVolumeEndKey + 1), juce::dontSendNotification);
-        globalAmpTextBox.setText (juce::String (audioProcessor.globalAmpValue, 4), juce::dontSendNotification);
-        expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKKeyVolume), juce::dontSendNotification);
-        wireShapeButtons();
-        updateControlVisibility();
-        repaint();
-    };
 
     addAndMakeVisible (amplitudeViewport);
     amplitudeViewport.setViewedComponent (&amplitudeContainer, false);
@@ -246,6 +256,13 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
     taperACTCheckbox.setColour (juce::ToggleButton::tickDisabledColourId, juce::Colours::black);
     taperACTCheckbox.onClick = [this] { taperACTToggled(); };
     taperACTCheckbox.setVisible (false);
+
+    addAndMakeVisible (applyOneOverSqrtNButton);
+    applyOneOverSqrtNButton.setButtonText ("1/vN");
+    applyOneOverSqrtNButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
+    applyOneOverSqrtNButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
+    applyOneOverSqrtNButton.onClick = [this] { applyOneOverSqrtNClicked(); };
+    applyOneOverSqrtNButton.setVisible (false);
 
     addAndMakeVisible (applyOneOverNButton);
     applyOneOverNButton.setButtonText ("1/n");
@@ -460,6 +477,77 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
     };
     ampC8UpperTextBox.onFocusLost = [applyAmpC8UpperBox] { applyAmpC8UpperBox(); };
 
+    addAndMakeVisible (evenMorphA0UpperTextBox);
+    evenMorphA0UpperTextBox.setInputRestrictions (2, "0123456789");
+    evenMorphA0UpperTextBox.setJustification (juce::Justification::centred);
+    evenMorphA0UpperTextBox.setColour (juce::TextEditor::textColourId,          juce::Colours::black);
+    evenMorphA0UpperTextBox.setColour (juce::TextEditor::backgroundColourId,    juce::Colours::white);
+    evenMorphA0UpperTextBox.setColour (juce::TextEditor::outlineColourId,       juce::Colours::black);
+    evenMorphA0UpperTextBox.setColour (juce::TextEditor::focusedOutlineColourId,juce::Colours::black);
+    evenMorphA0UpperTextBox.setVisible (false);
+    evenMorphA0UpperTextBox.setText (juce::String (audioProcessor.lastAppliedEvenMorphStartKey + 1), juce::dontSendNotification);
+    {
+        auto apply = [this]
+        {
+            int value = juce::jlimit (1, 88, evenMorphA0UpperTextBox.getText().getIntValue());
+            evenMorphA0UpperTextBox.setText (juce::String (value), juce::dontSendNotification);
+            audioProcessor.lastAppliedEvenMorphStartKey = value - 1;
+            for (int key = 0; key <= value - 1; ++key)
+            {
+                audioProcessor.evenMorphStrength[key] = 1.0;
+                int base  = audioProcessor.keyStartIndex[key];
+                int count = audioProcessor.harmonicCounts[key];
+                for (int h = 0; h < count; ++h)
+                {
+                    int n = audioProcessor.oscillators[base + h].harmonicNumber;
+                    audioProcessor.oscillators[base + h].amplitude = 1.0 / n;
+                }
+                recalculateKeyVolume (key);
+            }
+            repaint();
+            if (selectedKey != -1) rebuildAmplitudeSliders();
+        };
+        evenMorphA0UpperTextBox.onReturnKey = [this, apply] { apply(); unfocusAllComponents(); };
+        evenMorphA0UpperTextBox.onFocusLost = [apply] { apply(); };
+    }
+
+    addAndMakeVisible (evenMorphC8UpperTextBox);
+    evenMorphC8UpperTextBox.setInputRestrictions (2, "0123456789");
+    evenMorphC8UpperTextBox.setJustification (juce::Justification::centred);
+    evenMorphC8UpperTextBox.setColour (juce::TextEditor::textColourId,          juce::Colours::black);
+    evenMorphC8UpperTextBox.setColour (juce::TextEditor::backgroundColourId,    juce::Colours::white);
+    evenMorphC8UpperTextBox.setColour (juce::TextEditor::outlineColourId,       juce::Colours::black);
+    evenMorphC8UpperTextBox.setColour (juce::TextEditor::focusedOutlineColourId,juce::Colours::black);
+    evenMorphC8UpperTextBox.setVisible (false);
+    evenMorphC8UpperTextBox.setText (juce::String (audioProcessor.lastAppliedEvenMorphEndKey + 1), juce::dontSendNotification);
+    {
+        auto apply = [this]
+        {
+            int value = juce::jlimit (1, 88, evenMorphC8UpperTextBox.getText().getIntValue());
+            evenMorphC8UpperTextBox.setText (juce::String (value), juce::dontSendNotification);
+            audioProcessor.lastAppliedEvenMorphEndKey = value - 1;
+            for (int key = value - 1; key < 88; ++key)
+            {
+                audioProcessor.evenMorphStrength[key] = 0.0;
+                int base  = audioProcessor.keyStartIndex[key];
+                int count = audioProcessor.harmonicCounts[key];
+                for (int h = 0; h < count; ++h)
+                {
+                    int n = audioProcessor.oscillators[base + h].harmonicNumber;
+                    if (n % 2 == 0)
+                        audioProcessor.oscillators[base + h].amplitude = 0.0;
+                    else
+                        audioProcessor.oscillators[base + h].amplitude = 1.0 / n;
+                }
+                recalculateKeyVolume (key);
+            }
+            repaint();
+            if (selectedKey != -1) rebuildAmplitudeSliders();
+        };
+        evenMorphC8UpperTextBox.onReturnKey = [this, apply] { apply(); unfocusAllComponents(); };
+        evenMorphC8UpperTextBox.onFocusLost = [apply] { apply(); };
+    }
+
     setupGlobalTextBox (globalTuningTextBox, "-0123456789", 5,
                 [this] { globalTuningApplied(); },
                 [this] (float) {});
@@ -508,39 +596,38 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
             [this] (float) {});
     
 
-    addAndMakeVisible (tuningSubTabOneButton);
-        tuningSubTabOneButton.setButtonText ("I");
-        tuningSubTabOneButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
-        tuningSubTabOneButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
-        tuningSubTabOneButton.setVisible (false);
-    
-    tuningSubTabOneButton.onClick = [this]
-            {
-                unfocusAllComponents();
-                activeTuningSubTab = 1;
-                stretchA0TextBox.setText (juce::String (audioProcessor.lastAppliedStretchA0), juce::dontSendNotification);
-                stretchC8TextBox.setText (juce::String (audioProcessor.lastAppliedStretchC8), juce::dontSendNotification);
-                expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKTuning1), juce::dontSendNotification);
-                wireShapeButtons();
-                repaint();
-            };
-    
-    addAndMakeVisible (tuningSubTabTwoButton);
-        tuningSubTabTwoButton.setButtonText ("II");
-        tuningSubTabTwoButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
-        tuningSubTabTwoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
-        tuningSubTabTwoButton.setVisible (false);
-    
-    tuningSubTabTwoButton.onClick = [this]
-                        {
-                            unfocusAllComponents();
-                            activeTuningSubTab = 2;
-                            stretchA0TextBox.setText (juce::String (audioProcessor.lastAppliedInharmonicityA0, 4), juce::dontSendNotification);
-                            stretchC8TextBox.setText (juce::String (audioProcessor.lastAppliedInharmonicityC8, 4), juce::dontSendNotification);
-                            expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKTuning2), juce::dontSendNotification);
-                            wireShapeButtons();
-                            repaint();
-                        };
+    tuningSubTabSliderLookAndFeel.trackThickness   = 1.0f;
+    tuningSubTabSliderLookAndFeel.fixedThumbRadius = true;
+
+    addAndMakeVisible (tuningSubTabSlider);
+    tuningSubTabSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    tuningSubTabSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    tuningSubTabSlider.setRange (1.0, 2.0, 1.0);
+    tuningSubTabSlider.setValue (1.0, juce::dontSendNotification);
+    tuningSubTabSlider.setColour (juce::Slider::thumbColourId, juce::Colours::black);
+    tuningSubTabSlider.setLookAndFeel (&tuningSubTabSliderLookAndFeel);
+    tuningSubTabSlider.setVisible (false);
+    tuningSubTabSlider.onValueChange = [this]
+    {
+        int newTab = (int) tuningSubTabSlider.getValue();
+        if (newTab == activeTuningSubTab) return;
+        unfocusAllComponents();
+        activeTuningSubTab = newTab;
+        if (activeTuningSubTab == 1)
+        {
+            stretchA0TextBox.setText (juce::String (audioProcessor.lastAppliedStretchA0), juce::dontSendNotification);
+            stretchC8TextBox.setText (juce::String (audioProcessor.lastAppliedStretchC8), juce::dontSendNotification);
+            expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKTuning1), juce::dontSendNotification);
+        }
+        else
+        {
+            stretchA0TextBox.setText (juce::String (audioProcessor.lastAppliedInharmonicityA0, 4), juce::dontSendNotification);
+            stretchC8TextBox.setText (juce::String (audioProcessor.lastAppliedInharmonicityC8, 4), juce::dontSendNotification);
+            expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKTuning2), juce::dontSendNotification);
+        }
+        wireShapeButtons();
+        repaint();
+    };
     
         linearShapeButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
         linearShapeButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
@@ -677,7 +764,143 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
             audioProcessor.globalSustainValue = value;
             for (auto& osc : audioProcessor.oscillators)
                 osc.sustainLevel = value;
+            repaint();
         });
+
+    // sustainA0UpperTextBox — start key (black outline, matches ampA0UpperTextBox)
+    addAndMakeVisible (sustainA0UpperTextBox);
+    sustainA0UpperTextBox.setInputRestrictions (2, "0123456789");
+    sustainA0UpperTextBox.setJustification (juce::Justification::centred);
+    sustainA0UpperTextBox.setColour (juce::TextEditor::textColourId,           juce::Colours::black);
+    sustainA0UpperTextBox.setColour (juce::TextEditor::backgroundColourId,     juce::Colours::white);
+    sustainA0UpperTextBox.setColour (juce::TextEditor::outlineColourId,        juce::Colours::black);
+    sustainA0UpperTextBox.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::black);
+    sustainA0UpperTextBox.setVisible (false);
+    {
+        auto applySustainA0Upper = [this] {
+            int key = juce::jlimit (1, 88, sustainA0UpperTextBox.getText().getIntValue());
+            sustainA0UpperTextBox.setText (juce::String (key), juce::dontSendNotification);
+            audioProcessor.lastAppliedSustainStartKey = key - 1;
+            double actual = audioProcessor.oscillators[audioProcessor.keyStartIndex[key - 1]].sustainLevel;
+            audioProcessor.lastAppliedSustainA0 = actual;
+            sustainA0TextBox.setText (juce::String (actual, 4), juce::dontSendNotification);
+        };
+        sustainA0UpperTextBox.onFocusLost = [applySustainA0Upper] { applySustainA0Upper(); };
+        sustainA0UpperTextBox.onReturnKey = [this, applySustainA0Upper] {
+            applySustainA0Upper();
+            unfocusAllComponents();
+        };
+    }
+
+    // sustainA0TextBox — A0 sustain value (black outline, ScrollableTextEditor, matches ampA0TextBox)
+    setupGlobalTextBox (sustainA0TextBox, "0123456789.", 6,
+        [this] {
+            double v = juce::jlimit (0.0, 1.0, sustainA0TextBox.getText().getDoubleValue());
+            sustainA0TextBox.setText (juce::String (v, 4), juce::dontSendNotification);
+            audioProcessor.lastAppliedSustainA0 = v;
+            int endKey = audioProcessor.lastAppliedSustainStartKey;
+            for (int key = 0; key <= endKey; ++key)
+            {
+                int si = audioProcessor.keyStartIndex[key];
+                for (int h = 0; h < audioProcessor.harmonicCounts[key]; ++h)
+                    audioProcessor.oscillators[si + h].sustainLevel = v;
+            }
+            repaint();
+            if (selectedKey != -1) rebuildSustainSliders();
+        },
+        [this] (float delta) {
+            double v = juce::jlimit (0.0, 1.0, audioProcessor.lastAppliedSustainA0 + delta * 0.01);
+            sustainA0TextBox.setText (juce::String (v, 4), juce::dontSendNotification);
+            audioProcessor.lastAppliedSustainA0 = v;
+            int endKey = audioProcessor.lastAppliedSustainStartKey;
+            for (int key = 0; key <= endKey; ++key)
+            {
+                int si = audioProcessor.keyStartIndex[key];
+                for (int h = 0; h < audioProcessor.harmonicCounts[key]; ++h)
+                    audioProcessor.oscillators[si + h].sustainLevel = v;
+            }
+            repaint();
+        });
+
+    // sustainC8UpperTextBox — end key (blue outline, matches ampC8UpperTextBox)
+    addAndMakeVisible (sustainC8UpperTextBox);
+    sustainC8UpperTextBox.setInputRestrictions (2, "0123456789");
+    sustainC8UpperTextBox.setJustification (juce::Justification::centred);
+    sustainC8UpperTextBox.setColour (juce::TextEditor::textColourId,           juce::Colours::black);
+    sustainC8UpperTextBox.setColour (juce::TextEditor::backgroundColourId,     juce::Colours::white);
+    sustainC8UpperTextBox.setColour (juce::TextEditor::outlineColourId,        juce::Colours::blue);
+    sustainC8UpperTextBox.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::blue);
+    sustainC8UpperTextBox.setVisible (false);
+    {
+        auto applySustainC8Upper = [this] {
+            int key = juce::jlimit (1, 88, sustainC8UpperTextBox.getText().getIntValue());
+            sustainC8UpperTextBox.setText (juce::String (key), juce::dontSendNotification);
+            audioProcessor.lastAppliedSustainEndKey = key - 1;
+            double actual = audioProcessor.oscillators[audioProcessor.keyStartIndex[key - 1]].sustainLevel;
+            audioProcessor.lastAppliedSustainC8 = actual;
+            sustainC8TextBox.setText (juce::String (actual, 4), juce::dontSendNotification);
+        };
+        sustainC8UpperTextBox.onFocusLost = [applySustainC8Upper] { applySustainC8Upper(); };
+        sustainC8UpperTextBox.onReturnKey = [this, applySustainC8Upper] {
+            applySustainC8Upper();
+            unfocusAllComponents();
+        };
+    }
+
+    // sustainC8TextBox — C8 sustain value (blue outline, ScrollableTextEditor, matches ampC8TextBox)
+    setupGlobalTextBox (sustainC8TextBox, "0123456789.", 6,
+        [this] {
+            double v = juce::jlimit (0.0, 1.0, sustainC8TextBox.getText().getDoubleValue());
+            sustainC8TextBox.setText (juce::String (v, 4), juce::dontSendNotification);
+            audioProcessor.lastAppliedSustainC8 = v;
+            int startKey = audioProcessor.lastAppliedSustainEndKey;
+            for (int key = startKey; key < 88; ++key)
+            {
+                int si = audioProcessor.keyStartIndex[key];
+                for (int h = 0; h < audioProcessor.harmonicCounts[key]; ++h)
+                    audioProcessor.oscillators[si + h].sustainLevel = v;
+            }
+            repaint();
+            if (selectedKey != -1) rebuildSustainSliders();
+        },
+        [this] (float delta) {
+            double v = juce::jlimit (0.0, 1.0, audioProcessor.lastAppliedSustainC8 + delta * 0.01);
+            sustainC8TextBox.setText (juce::String (v, 4), juce::dontSendNotification);
+            audioProcessor.lastAppliedSustainC8 = v;
+            int startKey = audioProcessor.lastAppliedSustainEndKey;
+            for (int key = startKey; key < 88; ++key)
+            {
+                int si = audioProcessor.keyStartIndex[key];
+                for (int h = 0; h < audioProcessor.harmonicCounts[key]; ++h)
+                    audioProcessor.oscillators[si + h].sustainLevel = v;
+            }
+            repaint();
+        });
+    sustainC8TextBox.setColour (juce::TextEditor::outlineColourId,        juce::Colours::blue);
+    sustainC8TextBox.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::blue);
+
+    for (auto* btn : { &sustainLinearButton, &sustainSquaredButton, &sustainCubicButton,
+                       &sustainAbsValueButton, &sustainExpButton })
+    {
+        addAndMakeVisible (btn);
+        btn->setColour (juce::TextButton::buttonColourId,  juce::Colours::white);
+        btn->setColour (juce::TextButton::textColourOffId, juce::Colours::black);
+        btn->setVisible (false);
+    }
+    sustainLinearButton.setButtonText   ("1");
+    sustainSquaredButton.setButtonText  ("2");
+    sustainCubicButton.setButtonText    ("3");
+    sustainAbsValueButton.setButtonText ("||");
+    sustainExpButton.setButtonText      ("e");
+
+    setupGlobalTextBox (sustainExpKTextBox, "-0123456789", 3,
+        [this] {
+            int v = juce::jlimit (-50, 50, sustainExpKTextBox.getText().getIntValue());
+            sustainExpKTextBox.setText (juce::String (v), juce::dontSendNotification);
+            audioProcessor.lastAppliedExpKSustain = v;
+        },
+        [this] (float) {});
+    sustainExpKTextBox.setVisible (false);
 
     setupGlobalTextBox (globalDecayTextBox, "0123456789.", 7,
         [this] { globalDecayApplied(); },
@@ -694,35 +917,36 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
         });
     
 
-    addAndMakeVisible (decaySubTabOneButton);
-        decaySubTabOneButton.setButtonText ("I");
-        decaySubTabOneButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
-        decaySubTabOneButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
-        decaySubTabOneButton.setVisible (false);
-        decaySubTabOneButton.onClick = [this]
+    decaySubTabSliderLookAndFeel.trackThickness   = 1.0f;
+    decaySubTabSliderLookAndFeel.fixedThumbRadius = true;
+
+    addAndMakeVisible (decaySubTabSlider);
+    decaySubTabSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    decaySubTabSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    decaySubTabSlider.setRange (1.0, 2.0, 1.0);
+    decaySubTabSlider.setValue (1.0, juce::dontSendNotification);
+    decaySubTabSlider.setColour (juce::Slider::thumbColourId, juce::Colours::black);
+    decaySubTabSlider.setLookAndFeel (&decaySubTabSliderLookAndFeel);
+    decaySubTabSlider.setVisible (false);
+    decaySubTabSlider.onValueChange = [this]
+    {
+        int newTab = (int) decaySubTabSlider.getValue();
+        if (newTab == activeDecaySubTab) return;
+        activeDecaySubTab = newTab;
+        if (activeDecaySubTab == 1)
         {
-            activeDecaySubTab = 1;
             decayA0TextBox.setText (juce::String (audioProcessor.lastAppliedDecayA0, 4), juce::dontSendNotification);
             decayC8TextBox.setText (juce::String (audioProcessor.lastAppliedDecayC8, 4), juce::dontSendNotification);
             expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKDecay1), juce::dontSendNotification);
-            wireShapeButtons();
-            updateControlVisibility();
-            repaint();
-        };
-
-    addAndMakeVisible (decaySubTabTwoButton);
-        decaySubTabTwoButton.setButtonText ("II");
-        decaySubTabTwoButton.setColour (juce::TextButton::buttonColourId, juce::Colours::white);
-        decaySubTabTwoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
-        decaySubTabTwoButton.setVisible (false);
-        decaySubTabTwoButton.onClick = [this]
+        }
+        else
         {
-            activeDecaySubTab = 2;
             expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKDecay2), juce::dontSendNotification);
-            wireShapeButtons();
-            updateControlVisibility();
-            repaint();
-        };
+        }
+        wireShapeButtons();
+        updateControlVisibility();
+        repaint();
+    };
 
     setupGlobalTextBox (decayA0TextBox, "0123456789.", 7,
         [this] { decayA0Applied(); },
@@ -1044,6 +1268,11 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
             globalPanTextBox.setText (juce::String (audioProcessor.globalPanValue, 4), juce::dontSendNotification);
             globalAttackTextBox.setText (juce::String (audioProcessor.globalAttackValue, 4), juce::dontSendNotification);
             globalSustainTextBox.setText (juce::String (audioProcessor.globalSustainValue, 4), juce::dontSendNotification);
+    sustainA0UpperTextBox.setText (juce::String (audioProcessor.lastAppliedSustainStartKey + 1), juce::dontSendNotification);
+    sustainA0TextBox.setText      (juce::String (audioProcessor.lastAppliedSustainA0, 4),          juce::dontSendNotification);
+    sustainC8UpperTextBox.setText (juce::String (audioProcessor.lastAppliedSustainEndKey + 1),   juce::dontSendNotification);
+    sustainC8TextBox.setText      (juce::String (audioProcessor.lastAppliedSustainC8, 4),          juce::dontSendNotification);
+    sustainExpKTextBox.setText    (juce::String (audioProcessor.lastAppliedExpKSustain),           juce::dontSendNotification);
             globalDecayTextBox.setText (juce::String (audioProcessor.globalDecayValue, 4), juce::dontSendNotification);
             globalReleaseTextBox.setText (juce::String (audioProcessor.globalReleaseValue, 4), juce::dontSendNotification);
     
@@ -1052,8 +1281,10 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
     stretchC8TextBox.setText (juce::String (audioProcessor.lastAppliedStretchC8), juce::dontSendNotification);
     ampA0TextBox.setText (juce::String (audioProcessor.lastAppliedAmpA0, 4), juce::dontSendNotification);
     ampC8TextBox.setText (juce::String (audioProcessor.lastAppliedAmpC8, 4), juce::dontSendNotification);
-    ampA0UpperTextBox.setText (juce::String (audioProcessor.lastAppliedAmpStartKey + 1), juce::dontSendNotification);
-    ampC8UpperTextBox.setText (juce::String (audioProcessor.lastAppliedAmpEndKey + 1), juce::dontSendNotification);
+    ampA0UpperTextBox.setText      (juce::String (audioProcessor.lastAppliedAmpStartKey + 1), juce::dontSendNotification);
+    ampC8UpperTextBox.setText      (juce::String (audioProcessor.lastAppliedAmpEndKey + 1), juce::dontSendNotification);
+    evenMorphA0UpperTextBox.setText (juce::String (audioProcessor.lastAppliedEvenMorphStartKey + 1), juce::dontSendNotification);
+    evenMorphC8UpperTextBox.setText (juce::String (audioProcessor.lastAppliedEvenMorphEndKey   + 1), juce::dontSendNotification);
     attackA0TextBox.setText (juce::String (audioProcessor.lastAppliedAttackA0, 4), juce::dontSendNotification);
     attackC8TextBox.setText (juce::String (audioProcessor.lastAppliedAttackC8, 4), juce::dontSendNotification);
     decayA0TextBox.setText (juce::String (audioProcessor.lastAppliedDecayA0, 4), juce::dontSendNotification);
@@ -1106,11 +1337,14 @@ SineLabAudioProcessorEditor::~SineLabAudioProcessorEditor()
                 slider->setLookAndFeel (nullptr);
 
     keyVolumeSlider.setLookAndFeel (nullptr);
+    ampSubTabSlider.setLookAndFeel (nullptr);
+    tuningSubTabSlider.setLookAndFeel (nullptr);
+    decaySubTabSlider.setLookAndFeel (nullptr);
 }
 
 void SineLabAudioProcessorEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
-    updateActiveRanks (audioProcessor);
+    audioProcessor.updateActiveRanks();
     updateControlVisibility();
     rebuildSlidersForActiveTab();
     repaint();
@@ -1238,9 +1472,26 @@ void SineLabAudioProcessorEditor::paint (juce::Graphics& g)
         }
     
     if (selectedKey == -1 && activeTab == 5)
-            {
-                paintAttackGraph (g);
-            }
+    {
+        paintAttackGraph (g);
+        int contextAreaLeftEdge = (bounds.getWidth() * 3) / 4;
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::plain));
+        g.setColour (juce::Colours::blue);
+        g.drawText ("1s", contextAreaLeftEdge + 2, (int) topLineY, 36, 18, juce::Justification::centredLeft, false);
+        g.setColour (juce::Colours::red);
+        g.drawText ("0s", contextAreaLeftEdge + 2, (int) (bounds.getHeight() - bounds.getHeight() / 8.0f) - 18, 36, 18, juce::Justification::centredLeft, false);
+    }
+
+    if (selectedKey == -1 && activeTab == 7)
+    {
+        paintSustainGraph (g);
+        int contextAreaLeftEdge = (bounds.getWidth() * 3) / 4;
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::plain));
+        g.setColour (juce::Colours::blue);
+        g.drawText ("1", contextAreaLeftEdge + 2, (int) topLineY, 36, 18, juce::Justification::centredLeft, false);
+        g.setColour (juce::Colours::red);
+        g.drawText ("0", contextAreaLeftEdge + 2, (int) (bounds.getHeight() - bounds.getHeight() / 8.0f) - 18, 36, 18, juce::Justification::centredLeft, false);
+    }
 
     if (selectedKey == -1 && activeTab == 6)
     {
@@ -1251,12 +1502,37 @@ void SineLabAudioProcessorEditor::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::plain));
         juce::String decaySubTabLabel = (activeDecaySubTab == 1) ? "KEYBOARD" : "KEY";
         g.drawText (decaySubTabLabel, contextAreaLeftEdge, (int) topLineY, contextAreaWidth, 25, juce::Justification::centred, false);
+        if (activeDecaySubTab == 1)
+        {
+            g.setColour (juce::Colours::blue);
+            g.drawText ("10s", contextAreaLeftEdge + 2, (int) topLineY, 36, 18, juce::Justification::centredLeft, false);
+            g.setColour (juce::Colours::red);
+            g.drawText ("0", contextAreaLeftEdge + 2, (int) (bounds.getHeight() - bounds.getHeight() / 8.0f) - 18, 36, 18, juce::Justification::centredLeft, false);
+        }
+
+        {
+            auto sb    = decaySubTabSlider.getBounds();
+            int thumbR = 5;
+            int labelH = 11;
+            int labelW = 10;
+            int labelY = sb.getY() + sb.getHeight() / 2 - thumbR - labelH;
+            g.setColour (juce::Colours::black);
+            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
+            g.drawText ("1", sb.getX(),              labelY, labelW, labelH, juce::Justification::centred, false);
+            g.drawText ("2", sb.getRight() - labelW, labelY, labelW, labelH, juce::Justification::centred, false);
+        }
     }
 
     if (selectedKey == -1 && activeTab == 8)
-            {
-                paintReleaseGraph (g);
-            }
+    {
+        paintReleaseGraph (g);
+        int contextAreaLeftEdge = (bounds.getWidth() * 3) / 4;
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::plain));
+        g.setColour (juce::Colours::blue);
+        g.drawText ("1s", contextAreaLeftEdge + 2, (int) topLineY, 36, 18, juce::Justification::centredLeft, false);
+        g.setColour (juce::Colours::red);
+        g.drawText ("0s", contextAreaLeftEdge + 2, (int) (bounds.getHeight() - bounds.getHeight() / 8.0f) - 18, 36, 18, juce::Justification::centredLeft, false);
+    }
 
     if (selectedKey == -1 && activeTab == 2)
             {
@@ -1267,6 +1543,18 @@ void SineLabAudioProcessorEditor::paint (juce::Graphics& g)
 
                 juce::String subTabLabel = (activeTuningSubTab == 1) ? "STRETCH" : "INHARMONICITY";
                 g.drawText (subTabLabel, contextAreaLeftEdgeForLabel, (int) topLineY, contextAreaWidthForLabel, 25, juce::Justification::centred, false);
+
+                {
+                    auto sb    = tuningSubTabSlider.getBounds();
+                    int thumbR = 5;
+                    int labelH = 11;
+                    int labelW = 10;
+                    int labelY = sb.getY() + sb.getHeight() / 2 - thumbR - labelH;
+                    g.setColour (juce::Colours::black);
+                    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
+                    g.drawText ("1", sb.getX(),           labelY, labelW, labelH, juce::Justification::centred, false);
+                    g.drawText ("2", sb.getRight() - labelW, labelY, labelW, labelH, juce::Justification::centred, false);
+                }
             }
 
     if (selectedKey == -1 && activeTab == 1)
@@ -1285,7 +1573,7 @@ void SineLabAudioProcessorEditor::paint (juce::Graphics& g)
                     g.setColour (juce::Colours::red);
                     g.drawText ("0%",  contextAreaLeftEdge + 2, (int) (bounds.getHeight() - bounds.getHeight() / 8.0f) - 18, 36, 18, juce::Justification::centredLeft, false);
                 }
-                else
+                else if (activeAmpSubTab == 2)
                 {
                     g.drawText ("KEY VOLUME", contextAreaLeftEdge, (int) topLineY, contextAreaWidth, 25, juce::Justification::centred, false);
                     paintKeyVolumeGraph (g);
@@ -1294,6 +1582,25 @@ void SineLabAudioProcessorEditor::paint (juce::Graphics& g)
                     g.drawText ("1", contextAreaLeftEdge + 2, (int) topLineY, 36, 18, juce::Justification::centredLeft, false);
                     g.setColour (juce::Colours::red);
                     g.drawText ("0", contextAreaLeftEdge + 2, (int) (bounds.getHeight() - bounds.getHeight() / 8.0f) - 18, 36, 18, juce::Justification::centredLeft, false);
+                }
+                else if (activeAmpSubTab == 3)
+                {
+                    g.drawText ("SAW TO SQUARE", contextAreaLeftEdge, (int) topLineY, contextAreaWidth, 25, juce::Justification::centred, false);
+                    paintEvenMorphGraph (g);
+                }
+
+                // 1 / 2 / 3 labels above slider snap positions
+                {
+                    auto sb    = ampSubTabSlider.getBounds();
+                    int thumbR = 5;
+                    int labelH = 11;
+                    int labelW = 10;
+                    int labelY = sb.getY() + sb.getHeight() / 2 - thumbR - labelH;
+                    g.setColour (juce::Colours::black);
+                    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
+                    g.drawText ("1",   sb.getX(),                       labelY, labelW, labelH, juce::Justification::centred, false);
+                    g.drawText ("2",  sb.getCentreX()  - labelW / 2,   labelY, labelW, labelH, juce::Justification::centred, false);
+                    g.drawText ("3", sb.getRight()    - labelW,        labelY, labelW, labelH, juce::Justification::centred, false);
                 }
             }
 
@@ -1343,12 +1650,12 @@ void SineLabAudioProcessorEditor::resized()
     int scrollBarThickness = toggleGraphViewport.getScrollBarThickness();
     toggleGraphViewport.setBounds (0, graphTop, graphRight + scrollBarThickness, graphBottom - graphTop);
     toggleGraphComponent.setSize (graphRight, 727 * 10);
-    
+
     globalToggleCheckbox.setBounds (bounds.getWidth() - 30, contentAreaBottom - 30, 30, 30);
-    
+
     firstHarmonicToggleCheckbox.setBounds (bounds.getWidth() - 30, contentAreaBottom - 65, 30, 30);
     firstHarmonicLabel.setBounds (bounds.getWidth() - 110, contentAreaBottom - 65, 75, 30);
-    
+
     evensToggleCheckbox.setBounds (bounds.getWidth() - 30, contentAreaBottom - 100, 30, 30);
     evensLabel.setBounds (bounds.getWidth() - 110, contentAreaBottom - 100, 75, 30);
 
@@ -1357,36 +1664,42 @@ void SineLabAudioProcessorEditor::resized()
 
     everyNToggleCheckbox.setBounds (bounds.getWidth() - 30, contentAreaBottom - 170, 30, 30);
     everyNTextBox.setBounds (bounds.getWidth() - 60, contentAreaBottom - 170, 30, 30);
-    
+
     toggleTabButton.setBounds (0, 0, (int) tabWidth, (int) topLineY);
 
     ampTabButton.setBounds ((int) tabWidth, 0, (int) tabWidth, (int) topLineY);
     globalAmpTextBox.setBounds (bounds.getWidth() - 80, contentAreaBottom - 35, 80, 30);
-    
+
     normalizationCheckbox.setBounds (bounds.getWidth() - 30, contentAreaBottom - 65, 30, 30);
     taperCTCheckbox.setBounds  ((bounds.getWidth() * 3) / 4 + (bounds.getWidth() / 4) / 4 - 50, contentAreaBottom - 65,  100, 30);
     taperACTCheckbox.setBounds ((bounds.getWidth() * 3) / 4 + (bounds.getWidth() / 4) / 4 - 50, contentAreaBottom - 95,  100, 30);
+    applyOneOverSqrtNButton.setBounds (bounds.getWidth() - 80, contentAreaBottom - 185, 80, 30);
     applyOneOverNButton.setBounds (bounds.getWidth() - 80, contentAreaBottom - 125, 80, 30);
-    
     applyOneOverNSquaredButton.setBounds (bounds.getWidth() - 80, contentAreaBottom - 155, 80, 30);
-    
+
     tuningTabButton.setBounds ((int) (2 * tabWidth), 0, (int) tabWidth, (int) topLineY);
         globalTuningTextBox.setBounds (bounds.getWidth() - 80, contentAreaBottom - 35, 80, 30);
-    
+
     int contextAreaLeftEdge = (bounds.getWidth() * 3) / 4;
         int contextAreaWidth = bounds.getWidth() - contextAreaLeftEdge;
         int leftHalfCenterX = contextAreaLeftEdge + (contextAreaWidth / 4) - 40;
         stretchA0TextBox.setBounds (leftHalfCenterX, contentAreaTop, 80, 30);
     ampA0TextBox.setBounds (contextAreaLeftEdge + contextAreaWidth / 2 - 60, contentAreaTop, 60, 30);
-    
+
     int reducedTabButtonWidth = (30 * 3) / 4;
     int subTabMargin = 4;
     int masterBoxLeft = bounds.getWidth() - 80;
-    ampSubTabTwoButton.setBounds    (masterBoxLeft - subTabMargin - reducedTabButtonWidth, contentAreaBottom - 35, reducedTabButtonWidth, 30);
-    ampSubTabOneButton.setBounds    (masterBoxLeft - subTabMargin - reducedTabButtonWidth - subTabMargin - reducedTabButtonWidth, contentAreaBottom - 35, reducedTabButtonWidth, 30);
-    tuningSubTabTwoButton.setBounds (masterBoxLeft - subTabMargin - reducedTabButtonWidth, contentAreaBottom - 35, reducedTabButtonWidth, 30);
-    tuningSubTabOneButton.setBounds  (masterBoxLeft - subTabMargin - reducedTabButtonWidth - subTabMargin - reducedTabButtonWidth, contentAreaBottom - 35, reducedTabButtonWidth, 30);
-    
+    {
+        int sliderW = reducedTabButtonWidth * 3 + subTabMargin * 2;
+        int sliderX = masterBoxLeft - subTabMargin - sliderW;
+        ampSubTabSlider.setBounds (sliderX, contentAreaBottom - 35, sliderW, 30);
+    }
+    {
+        int sliderW = reducedTabButtonWidth * 2 + subTabMargin * 1;
+        int sliderX = masterBoxLeft - subTabMargin - sliderW;
+        tuningSubTabSlider.setBounds (sliderX, contentAreaBottom - 35, sliderW, 30);
+    }
+
     int rightHalfCenterX = contextAreaLeftEdge + (contextAreaWidth * 3 / 4) - 40;
     stretchC8TextBox.setBounds (rightHalfCenterX, contentAreaTop, 80, 30);
     ampC8TextBox.setBounds (bounds.getWidth() - 60, contentAreaTop, 60, 30);
@@ -1400,11 +1713,15 @@ void SineLabAudioProcessorEditor::resized()
     {
         int a0BoxLeft = contextAreaLeftEdge + contextAreaWidth / 2 - 60;
         int upperRight = a0BoxLeft - 5;
-        ampA0UpperTextBox.setBounds (shapeRowLeft, contentAreaTop, upperRight - shapeRowLeft, 30);
+        int w = upperRight - shapeRowLeft;
+        ampA0UpperTextBox.setBounds    (shapeRowLeft, contentAreaTop, w, 30);
+        evenMorphA0UpperTextBox.setBounds (shapeRowLeft, contentAreaTop, w, 30);
     }
     {
         int upperLeft = shapeRowLeft + (shapeRowSpan * 2) / 3;
-        ampC8UpperTextBox.setBounds (upperLeft, contentAreaTop, (bounds.getWidth() - 60) - upperLeft - 5, 30);
+        int w = (bounds.getWidth() - 60) - upperLeft - 5;
+        ampC8UpperTextBox.setBounds    (upperLeft, contentAreaTop, w, 30);
+        evenMorphC8UpperTextBox.setBounds (upperLeft, contentAreaTop, w, 30);
     }
 
         linearShapeButton.setBounds (shapeRowLeft, contentAreaTop + 35, 30, 30);
@@ -1413,8 +1730,8 @@ void SineLabAudioProcessorEditor::resized()
         absValueShapeButton.setBounds (shapeRowRight, contentAreaTop + 35, 30, 30);
     expShapeButton.setBounds (shapeRowLeft, contentAreaTop + 70, 30, 30);
             expSteepnessTextBox.setBounds (shapeRowLeft + shapeRowSpan / 3, contentAreaTop + 70, 30, 30);
-    
-    
+
+
     phaseA0TextBox.setBounds (leftHalfCenterX, contentAreaTop, 80, 30);
     phaseC8TextBox.setBounds (rightHalfCenterX, contentAreaTop, 80, 30);
     phaseEvensTextBox.setBounds (bounds.getWidth() - 80, contentAreaBottom - 105, 80, 30);
@@ -1428,21 +1745,46 @@ void SineLabAudioProcessorEditor::resized()
     oddLeftEvenRightButton.setBounds (leftHalfCenterX, contentAreaBottom - 65, 80, 30);
     twoLeftButton.setBounds (leftHalfCenterX, contentAreaBottom - 95, 80, 30);
     alternateActiveButton.setBounds (bounds.getWidth() - 80, contentAreaBottom - 95, 80, 30);
-    
+
     globalAttackTextBox.setBounds (bounds.getWidth() - 80, contentAreaBottom - 35, 80, 30);
     attackRandTextBox.setBounds (bounds.getWidth() - 80, contentAreaBottom - 70, 80, 30);
     attackRandLabel.setBounds (bounds.getWidth() - 160, contentAreaBottom - 70, 75, 30);
-    
+
     attackA0TextBox.setBounds (leftHalfCenterX, contentAreaTop, 80, 30);
         attackC8TextBox.setBounds (rightHalfCenterX, contentAreaTop, 80, 30);
     globalSustainTextBox.setBounds (bounds.getWidth() - 80, contentAreaBottom - 35, 80, 30);
+    {
+        // mirror amp sub-tab I layout exactly
+        int a0BoxLeft  = contextAreaLeftEdge + contextAreaWidth / 2 - 60;
+        int upperRight = a0BoxLeft - 5;
+        int upperW1    = upperRight - shapeRowLeft;
+        sustainA0UpperTextBox.setBounds (shapeRowLeft, contentAreaTop, upperW1, 30);
+
+        sustainA0TextBox.setBounds (a0BoxLeft, contentAreaTop, 60, 30);
+
+        int upperLeft = shapeRowLeft + (shapeRowSpan * 2) / 3;
+        int upperW2   = (bounds.getWidth() - 60) - upperLeft - 5;
+        sustainC8UpperTextBox.setBounds (upperLeft, contentAreaTop, upperW2, 30);
+
+        sustainC8TextBox.setBounds (bounds.getWidth() - 60, contentAreaTop, 60, 30);
+
+        sustainLinearButton.setBounds   (shapeRowLeft,                        contentAreaTop + 35, 30, 30);
+        sustainSquaredButton.setBounds  (shapeRowLeft + shapeRowSpan / 3,     contentAreaTop + 35, 30, 30);
+        sustainCubicButton.setBounds    (shapeRowLeft + (shapeRowSpan * 2) / 3, contentAreaTop + 35, 30, 30);
+        sustainAbsValueButton.setBounds (shapeRowRight,                       contentAreaTop + 35, 30, 30);
+        sustainExpButton.setBounds      (shapeRowLeft,                        contentAreaTop + 70, 30, 30);
+        sustainExpKTextBox.setBounds    (shapeRowLeft + shapeRowSpan / 3,     contentAreaTop + 70, 30, 30);
+    }
     globalDecayTextBox.setBounds (bounds.getWidth() - 80, contentAreaBottom - 35, 80, 30);
 
     decayA0TextBox.setBounds (leftHalfCenterX, contentAreaTop, 80, 30);
     decayC8TextBox.setBounds (rightHalfCenterX, contentAreaTop, 80, 30);
     decayIIA0TextBox.setBounds (leftHalfCenterX, contentAreaTop, 80, 30);
-    decaySubTabTwoButton.setBounds (masterBoxLeft - subTabMargin - reducedTabButtonWidth, contentAreaBottom - 35, reducedTabButtonWidth, 30);
-    decaySubTabOneButton.setBounds  (masterBoxLeft - subTabMargin - reducedTabButtonWidth - subTabMargin - reducedTabButtonWidth, contentAreaBottom - 35, reducedTabButtonWidth, 30);
+    {
+        int sliderW = reducedTabButtonWidth * 2 + subTabMargin * 1;
+        int sliderX = masterBoxLeft - subTabMargin - sliderW;
+        decaySubTabSlider.setBounds (sliderX, contentAreaBottom - 35, sliderW, 30);
+    }
     releaseRandTextBox.setBounds (bounds.getWidth() - 80, contentAreaBottom - 70, 80, 30);
     releaseRandLabel.setBounds (bounds.getWidth() - 160, contentAreaBottom - 70, 75, 30);
     globalReleaseTextBox.setBounds (bounds.getWidth() - 80, contentAreaBottom - 35, 80, 30);
@@ -1459,8 +1801,8 @@ void SineLabAudioProcessorEditor::resized()
     int verticalViewportWidth = (bounds.getWidth() * 3/4);
     int horizontalViewportTop = (int) topLineY;
             int horizontalViewportHeight = contentAreaBottom - horizontalViewportTop;
-    
-    
+
+
 
         amplitudeViewport.setBounds (0, contentAreaTop - sliderShift, verticalViewportWidth, sliderHeight + 20);
 
@@ -1469,16 +1811,12 @@ void SineLabAudioProcessorEditor::resized()
         tuningViewport.setBounds (0, contentAreaTop - sliderShift, verticalViewportWidth, sliderHeight + 20);
 
         phaseViewport.setBounds (0, contentAreaTop - sliderShift, verticalViewportWidth, sliderHeight + 20);
-        
+
     panViewport.setBounds (0, horizontalViewportTop, bounds.getWidth() * 3 / 4, horizontalViewportHeight);
             attackViewport.setBounds (0, horizontalViewportTop, bounds.getWidth() * 3 / 4, horizontalViewportHeight);
             decayViewport.setBounds (0, horizontalViewportTop, bounds.getWidth() * 3 / 4, horizontalViewportHeight);
             sustainViewport.setBounds (0, horizontalViewportTop, bounds.getWidth() * 3 / 4, horizontalViewportHeight);
             releaseViewport.setBounds (0, horizontalViewportTop, bounds.getWidth() * 3 / 4, horizontalViewportHeight);
-    
-    
-    
-    
 }
 
 void SineLabAudioProcessorEditor::tabSelected (int tabIndex)
@@ -1494,7 +1832,9 @@ void SineLabAudioProcessorEditor::tabSelected (int tabIndex)
     if (activeTab == 0)
         expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKToggle), juce::dontSendNotification);
     else if (activeTab == 1)
-        expSteepnessTextBox.setText (juce::String (activeAmpSubTab == 1 ? audioProcessor.lastAppliedExpKAmp : audioProcessor.lastAppliedExpKKeyVolume), juce::dontSendNotification);
+        expSteepnessTextBox.setText (juce::String (activeAmpSubTab == 1 ? audioProcessor.lastAppliedExpKAmp
+                                                 : activeAmpSubTab == 2 ? audioProcessor.lastAppliedExpKKeyVolume
+                                                                        : audioProcessor.lastAppliedExpKEvenMorph), juce::dontSendNotification);
     else if (activeTab == 5)
         expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKAttack), juce::dontSendNotification);
     else if (activeTab == 6)
@@ -1512,6 +1852,8 @@ void SineLabAudioProcessorEditor::tabSelected (int tabIndex)
     }
     else if (activeTab == 4)
         panWidthTextBox.setText (juce::String (audioProcessor.lastAppliedPanWidth, 4), juce::dontSendNotification);
+    else if (activeTab == 7)
+        sustainExpKTextBox.setText (juce::String (audioProcessor.lastAppliedExpKSustain), juce::dontSendNotification);
     else if (activeTab == 8)
         expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKRelease), juce::dontSendNotification);
     else if (activeTab == 2)
@@ -1558,19 +1900,21 @@ void SineLabAudioProcessorEditor::updateControlVisibility()
     amplitudeViewport.setVisible (selectedKey != -1 && activeTab == 1);
     keyVolumeSlider.setVisible (selectedKey != -1 && activeTab == 1);
 
-    globalAmpTextBox.setVisible (selectedKey == -1 && activeTab == 1);
-    ampA0TextBox.setVisible (selectedKey == -1 && activeTab == 1);
-    ampC8TextBox.setVisible (selectedKey == -1 && activeTab == 1);
+    globalAmpTextBox.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
+    ampA0TextBox.setVisible     (selectedKey == -1 && activeTab == 1 && activeAmpSubTab != 3);
+    ampC8TextBox.setVisible     (selectedKey == -1 && activeTab == 1 && activeAmpSubTab != 3);
     
     normalizationCheckbox.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
     taperCTCheckbox.setVisible  (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
     taperACTCheckbox.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
     taperCTCheckbox.setToggleState  (audioProcessor.taperCTEnabled,  juce::dontSendNotification);
     taperACTCheckbox.setToggleState (audioProcessor.taperACTEnabled, juce::dontSendNotification);
-    ampA0UpperTextBox.setVisible (selectedKey == -1 && activeTab == 1);
-    ampC8UpperTextBox.setVisible (selectedKey == -1 && activeTab == 1);
-    ampSubTabOneButton.setVisible (selectedKey == -1 && activeTab == 1);
-    ampSubTabTwoButton.setVisible (selectedKey == -1 && activeTab == 1);
+    ampA0UpperTextBox.setVisible      (selectedKey == -1 && activeTab == 1 && activeAmpSubTab != 3);
+    ampC8UpperTextBox.setVisible      (selectedKey == -1 && activeTab == 1 && activeAmpSubTab != 3);
+    evenMorphA0UpperTextBox.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 3);
+    evenMorphC8UpperTextBox.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 3);
+    ampSubTabSlider.setVisible (selectedKey == -1 && activeTab == 1);
+    applyOneOverSqrtNButton.setVisible (false);
     applyOneOverNButton.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
     applyOneOverNSquaredButton.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
     tuningViewport.setVisible (selectedKey != -1 && activeTab == 2);
@@ -1579,14 +1923,13 @@ void SineLabAudioProcessorEditor::updateControlVisibility()
     stretchA0TextBox.setVisible (selectedKey == -1 && activeTab == 2);
     stretchC8TextBox.setVisible (selectedKey == -1 && activeTab == 2);
     bool shapeButtonsVisible = (selectedKey == -1 && (activeTab == 0 || activeTab == 1 || activeTab == 2 || activeTab == 3 || activeTab == 4 || activeTab == 5 || activeTab == 6 || activeTab == 8));
-    linearShapeButton.setVisible (shapeButtonsVisible && activeTab != 4);
-    cubicShapeButton.setVisible (shapeButtonsVisible && activeTab != 4);
+    linearShapeButton.setVisible  (shapeButtonsVisible && activeTab != 4);
+    cubicShapeButton.setVisible   (shapeButtonsVisible && activeTab != 4);
     squaredShapeButton.setVisible (shapeButtonsVisible && activeTab != 0 && activeTab != 4);
-    absValueShapeButton.setVisible (shapeButtonsVisible && activeTab != 0 && activeTab != 4);
-    expShapeButton.setVisible (shapeButtonsVisible && activeTab != 4);
-    expSteepnessTextBox.setVisible (shapeButtonsVisible && activeTab != 4);
-    tuningSubTabOneButton.setVisible (selectedKey == -1 && activeTab == 2);
-    tuningSubTabTwoButton.setVisible (selectedKey == -1 && activeTab == 2);
+    absValueShapeButton.setVisible(shapeButtonsVisible && activeTab != 0 && activeTab != 4);
+    expShapeButton.setVisible     (shapeButtonsVisible && activeTab != 4);
+    expSteepnessTextBox.setVisible(shapeButtonsVisible && activeTab != 4);
+    tuningSubTabSlider.setVisible (selectedKey == -1 && activeTab == 2);
 
     phaseViewport.setVisible (selectedKey != -1 && activeTab == 3);
     bool phaseGlobalVisible = (selectedKey == -1 && activeTab == 3);
@@ -1624,10 +1967,22 @@ void SineLabAudioProcessorEditor::updateControlVisibility()
     decayA0TextBox.setVisible (selectedKey == -1 && activeTab == 6 && activeDecaySubTab == 1);
     decayC8TextBox.setVisible (selectedKey == -1 && activeTab == 6 && activeDecaySubTab == 1);
     decayIIA0TextBox.setVisible (selectedKey == -1 && activeTab == 6 && activeDecaySubTab == 2);
-    decaySubTabOneButton.setVisible (selectedKey == -1 && activeTab == 6);
-    decaySubTabTwoButton.setVisible (selectedKey == -1 && activeTab == 6);
+    decaySubTabSlider.setVisible (selectedKey == -1 && activeTab == 6);
     sustainViewport.setVisible (selectedKey != -1 && activeTab == 7);
         globalSustainTextBox.setVisible (selectedKey == -1 && activeTab == 7);
+    {
+        bool sv = (selectedKey == -1 && activeTab == 7);
+        sustainA0UpperTextBox.setVisible (sv);
+        sustainA0TextBox.setVisible      (sv);
+        sustainC8UpperTextBox.setVisible (sv);
+        sustainC8TextBox.setVisible      (sv);
+        sustainLinearButton.setVisible   (sv);
+        sustainSquaredButton.setVisible  (sv);
+        sustainCubicButton.setVisible    (sv);
+        sustainAbsValueButton.setVisible (sv);
+        sustainExpButton.setVisible      (sv);
+        sustainExpKTextBox.setVisible    (sv);
+    }
     
     
 
@@ -1717,7 +2072,7 @@ void SineLabAudioProcessorEditor::globalToggleChanged()
     for (auto& osc : audioProcessor.oscillators)
         osc.manuallyMuted = ! turnOn;
 
-    updateActiveRanks (audioProcessor);
+    audioProcessor.updateActiveRanks();
     recalculateAllKeyVolumes();
     repaint();
 
@@ -1736,7 +2091,7 @@ void SineLabAudioProcessorEditor::firstHarmonicToggleChanged()
         int index = audioProcessor.keyStartIndex[key];
         audioProcessor.oscillators[index].manuallyMuted = ! turnOn;
     }
-    updateActiveRanks (audioProcessor);
+    audioProcessor.updateActiveRanks();
     recalculateAllKeyVolumes();
     repaint();
 
@@ -1759,7 +2114,7 @@ void SineLabAudioProcessorEditor::evensToggleChanged()
             audioProcessor.oscillators[startIndex + h].manuallyMuted = ! turnOn;
     }
 
-    updateActiveRanks (audioProcessor);
+    audioProcessor.updateActiveRanks();
     recalculateAllKeyVolumes();
     repaint();
 
@@ -1795,7 +2150,7 @@ void SineLabAudioProcessorEditor::primesToggleChanged()
         }
     }
 
-    updateActiveRanks (audioProcessor);
+    audioProcessor.updateActiveRanks();
     recalculateAllKeyVolumes();
     repaint();
 
@@ -1819,7 +2174,7 @@ void SineLabAudioProcessorEditor::everyNToggleChanged()
             audioProcessor.oscillators[startIndex + h].manuallyMuted = ! turnOn;
     }
 
-    updateActiveRanks (audioProcessor);
+    audioProcessor.updateActiveRanks();
     recalculateAllKeyVolumes();
     repaint();
 
@@ -1827,12 +2182,30 @@ void SineLabAudioProcessorEditor::everyNToggleChanged()
         rebuildToggleButtons();
 }
 
+static float computeTaperFactor (const SineLabAudioProcessor& p, int oscIndex)
+{
+    const auto& osc = p.oscillators[oscIndex];
+    float taper = 1.0f;
+    if (p.taperCTEnabled)
+    {
+        int count = p.harmonicCounts[osc.ownerKey];
+        int h = osc.harmonicNumber - 1;
+        if (count > 0)
+            taper *= (float)(count - h) / (float)count;
+    }
+    if (p.taperACTEnabled && osc.activeCount > 0)
+        taper *= (float)(osc.activeCount - osc.activeRank) / (float)osc.activeCount;
+    return taper;
+}
+
 void SineLabAudioProcessorEditor::amplitudeSliderChanged (int harmonicIndex)
 {
     if (selectedKey != -1)
     {
         int index = audioProcessor.keyStartIndex[selectedKey] + harmonicIndex;
-        audioProcessor.oscillators[index].amplitude = (float) amplitudeSliders[harmonicIndex]->getValue();
+        float taper = computeTaperFactor (audioProcessor, index);
+        float sliderVal = (float) amplitudeSliders[harmonicIndex]->getValue();
+        audioProcessor.oscillators[index].amplitude = (taper > 0.0f) ? sliderVal / taper : sliderVal;
         recalculateKeyVolume (selectedKey);
         repaint();
     }
@@ -1857,7 +2230,10 @@ void SineLabAudioProcessorEditor::rebuildAmplitudeSliders()
 
     for (int h = 0; h < count; ++h)
     {
-        auto* slider = setupHarmonicSlider (amplitudeContainer, amplitudeLabels, 0.0, 1.0, 0.0001, h, audioProcessor.oscillators[startIndex + h].amplitude, [this] (int harmonicIndex) { amplitudeSliderChanged (harmonicIndex); });
+        int oscIndex = startIndex + h;
+        float taper = computeTaperFactor (audioProcessor, oscIndex);
+        float displayVal = audioProcessor.oscillators[oscIndex].amplitude * taper;
+        auto* slider = setupHarmonicSlider (amplitudeContainer, amplitudeLabels, 0.0, 1.0, 0.0001, h, displayVal, [this] (int harmonicIndex) { amplitudeSliderChanged (harmonicIndex); });
         amplitudeSliders.add (slider);
     }
 
@@ -1884,48 +2260,34 @@ void SineLabAudioProcessorEditor::normalizationToggled()
     }
 }
 
-static void updateActiveRanks (SineLabAudioProcessor& ap)
-{
-    for (int key = 0; key < 88; ++key)
-    {
-        int startIndex = ap.keyStartIndex[key];
-        int count = ap.harmonicCounts[key];
-
-        int activeCount = 0;
-        for (int h = 0; h < count; ++h)
-        {
-            auto& osc = ap.oscillators[startIndex + h];
-            if (! osc.manuallyMuted && ! osc.aboveCeiling)
-                ++activeCount;
-        }
-
-        int activeRank = 0;
-        for (int h = 0; h < count; ++h)
-        {
-            auto& osc = ap.oscillators[startIndex + h];
-            osc.activeCount = activeCount;
-            if (! osc.manuallyMuted && ! osc.aboveCeiling)
-                osc.activeRank = activeRank++;
-            else
-                osc.activeRank = 0;
-        }
-    }
-}
-
 void SineLabAudioProcessorEditor::taperCTToggled()
 {
     audioProcessor.taperCTEnabled = taperCTCheckbox.getToggleState();
+    if (selectedKey != -1) rebuildAmplitudeSliders();
     repaint();
 }
 
 void SineLabAudioProcessorEditor::taperACTToggled()
 {
     audioProcessor.taperACTEnabled = taperACTCheckbox.getToggleState();
-    updateActiveRanks (audioProcessor);
+    audioProcessor.updateActiveRanks();
+    if (selectedKey != -1) rebuildAmplitudeSliders();
     repaint();
 }
 
 
+
+void SineLabAudioProcessorEditor::applyOneOverSqrtNClicked()
+{
+    for (auto& osc : audioProcessor.oscillators)
+        osc.amplitude = 1.0 / std::sqrt ((double) osc.harmonicNumber);
+
+    for (int key = 0; key < 88; ++key)
+        recalculateKeyVolume (key);
+
+    if (selectedKey != -1)
+        rebuildAmplitudeSliders();
+}
 
 void SineLabAudioProcessorEditor::applyOneOverNClicked()
 {
@@ -1974,7 +2336,7 @@ void SineLabAudioProcessorEditor::recalculateKeyVolume (int key)
     }
 
     double rms = std::sqrt (sumOfSquares);
-    double newVolume = (rms > 0.0) ? (0.75 / rms) : 1.0;
+    double newVolume = (rms > 0.0) ? (0.5 / rms) : 1.0;
     audioProcessor.keyVolume[key] = newVolume;
 
     if (key == selectedKey)
@@ -2053,7 +2415,7 @@ void SineLabAudioProcessorEditor::ampA0Applied()
         repaint();
         if (selectedKey >= 0 && selectedKey <= startKey) rebuildAmplitudeSliders();
     }
-    else
+    else if (activeAmpSubTab == 2)
     {
         double value = juce::jlimit (0.0, 1.0, ampA0TextBox.getText().getDoubleValue());
         ampA0TextBox.setText (juce::String (value, 4), juce::dontSendNotification);
@@ -2063,6 +2425,27 @@ void SineLabAudioProcessorEditor::ampA0Applied()
         if (selectedKey == keyIndex)
             keyVolumeSlider.setValue (value, juce::dontSendNotification);
         repaint();
+    }
+    else if (activeAmpSubTab == 3)
+    {
+        double value = juce::jlimit (0.0, 1.0, ampA0TextBox.getText().getDoubleValue());
+        ampA0TextBox.setText (juce::String (value, 4), juce::dontSendNotification);
+        audioProcessor.lastAppliedEvenMorphA0 = value;
+        int startKey = audioProcessor.lastAppliedEvenMorphStartKey;
+        for (int key = 0; key <= startKey; ++key)
+        {
+            audioProcessor.evenMorphStrength[key] = value;
+            int base = audioProcessor.keyStartIndex[key];
+            int count = audioProcessor.harmonicCounts[key];
+            for (int h = 0; h < count; ++h)
+            {
+                int n = audioProcessor.oscillators[base + h].harmonicNumber;
+                audioProcessor.oscillators[base + h].amplitude = (n % 2 == 0) ? value / n : 1.0 / n;
+            }
+            recalculateKeyVolume (key);
+        }
+        repaint();
+        if (selectedKey >= 0 && selectedKey <= startKey) rebuildAmplitudeSliders();
     }
     ampA0TextBox.giveAwayKeyboardFocus();
 }
@@ -2083,7 +2466,7 @@ void SineLabAudioProcessorEditor::ampC8Applied()
         repaint();
         if (selectedKey >= endKey) rebuildAmplitudeSliders();
     }
-    else
+    else if (activeAmpSubTab == 2)
     {
         double value = juce::jlimit (0.0, 1.0, ampC8TextBox.getText().getDoubleValue());
         ampC8TextBox.setText (juce::String (value, 4), juce::dontSendNotification);
@@ -2093,6 +2476,27 @@ void SineLabAudioProcessorEditor::ampC8Applied()
         if (selectedKey == keyIndex)
             keyVolumeSlider.setValue (value, juce::dontSendNotification);
         repaint();
+    }
+    else if (activeAmpSubTab == 3)
+    {
+        double value = juce::jlimit (0.0, 1.0, ampC8TextBox.getText().getDoubleValue());
+        ampC8TextBox.setText (juce::String (value, 4), juce::dontSendNotification);
+        audioProcessor.lastAppliedEvenMorphC8 = value;
+        int endKey = audioProcessor.lastAppliedEvenMorphEndKey;
+        for (int key = endKey; key < 88; ++key)
+        {
+            audioProcessor.evenMorphStrength[key] = value;
+            int base = audioProcessor.keyStartIndex[key];
+            int count = audioProcessor.harmonicCounts[key];
+            for (int h = 0; h < count; ++h)
+            {
+                int n = audioProcessor.oscillators[base + h].harmonicNumber;
+                audioProcessor.oscillators[base + h].amplitude = (n % 2 == 0) ? value / n : 1.0 / n;
+            }
+            recalculateKeyVolume (key);
+        }
+        repaint();
+        if (selectedKey >= endKey) rebuildAmplitudeSliders();
     }
     ampC8TextBox.giveAwayKeyboardFocus();
 }
@@ -2156,13 +2560,6 @@ void SineLabAudioProcessorEditor::stretchA0Applied()
     value = juce::jlimit (-50, 50, value);
     stretchA0TextBox.setText (juce::String (value), juce::dontSendNotification);
 
-    if (value == audioProcessor.lastAppliedStretchA0)
-    {
-        stretchA0TextBox.giveAwayKeyboardFocus();
-        return;
-    }
-
-    int delta = value - audioProcessor.lastAppliedStretchA0;
     audioProcessor.lastAppliedStretchA0 = value;
 
     int key = 0;
@@ -2171,7 +2568,7 @@ void SineLabAudioProcessorEditor::stretchA0Applied()
 
     for (int h = 0; h < count; ++h)
     {
-        audioProcessor.oscillators[startIndex + h].stretchCents += delta;
+        audioProcessor.oscillators[startIndex + h].stretchCents = value;
         audioProcessor.oscillators[startIndex + h].recombineTuningCents();
         audioProcessor.oscillators[startIndex + h].needsFrequencyUpdate = true;
     }
@@ -2226,13 +2623,6 @@ void SineLabAudioProcessorEditor::stretchC8Applied()
     value = juce::jlimit (-50, 50, value);
     stretchC8TextBox.setText (juce::String (value), juce::dontSendNotification);
 
-    if (value == audioProcessor.lastAppliedStretchC8)
-    {
-        stretchC8TextBox.giveAwayKeyboardFocus();
-        return;
-    }
-
-    int delta = value - audioProcessor.lastAppliedStretchC8;
     audioProcessor.lastAppliedStretchC8 = value;
 
     int key = 87;
@@ -2241,7 +2631,7 @@ void SineLabAudioProcessorEditor::stretchC8Applied()
 
     for (int h = 0; h < count; ++h)
     {
-        audioProcessor.oscillators[startIndex + h].stretchCents += delta;
+        audioProcessor.oscillators[startIndex + h].stretchCents = value;
         audioProcessor.oscillators[startIndex + h].recombineTuningCents();
         audioProcessor.oscillators[startIndex + h].needsFrequencyUpdate = true;
     }
@@ -2374,6 +2764,36 @@ void SineLabAudioProcessorEditor::applyShapeToAttack (std::function<double(doubl
                        [this] { rebuildAttackSliders(); });
 }
 
+void SineLabAudioProcessorEditor::applyShapeToSustain (std::function<double(double)> shapeFunction)
+{
+    double a0       = audioProcessor.lastAppliedSustainA0;
+    double c8       = audioProcessor.lastAppliedSustainC8;
+    int    startKey = audioProcessor.lastAppliedSustainStartKey;
+    int    endKey   = audioProcessor.lastAppliedSustainEndKey;
+    int    span     = endKey - startKey;
+
+    for (int key = 0; key < 88; ++key)
+    {
+        double v;
+        if (key <= startKey)
+            v = a0;
+        else if (key >= endKey)
+            v = c8;
+        else
+        {
+            double t = (span > 0) ? (double) (key - startKey) / span * 2.0 - 1.0 : -1.0;
+            v = juce::jlimit (0.0, 1.0, a0 + (c8 - a0) * shapeFunction (t));
+        }
+
+        int si = audioProcessor.keyStartIndex[key];
+        for (int h = 0; h < audioProcessor.harmonicCounts[key]; ++h)
+            audioProcessor.oscillators[si + h].sustainLevel = v;
+    }
+
+    repaint();
+    if (selectedKey != -1) rebuildSustainSliders();
+}
+
 void SineLabAudioProcessorEditor::applyShapeToDecay (std::function<double(double)> shapeFunction)
 {
     double a0 = audioProcessor.lastAppliedDecayA0;
@@ -2435,6 +2855,44 @@ void SineLabAudioProcessorEditor::applyShapeToKeyVolume (std::function<double(do
     {
         double t = (span > 0) ? ((double)(key - startKey) / span) * 2.0 - 1.0 : -1.0;
         audioProcessor.keyVolume[key] = juce::jlimit (0.0, 1.0, a0 + (c8 - a0) * shapeFunction (t));
+    }
+    repaint();
+    if (selectedKey != -1) rebuildAmplitudeSliders();
+}
+
+void SineLabAudioProcessorEditor::applyShapeToEvenMorph (std::function<double(double)> shapeFunction)
+{
+    int startKey = audioProcessor.lastAppliedEvenMorphStartKey;
+    int endKey   = audioProcessor.lastAppliedEvenMorphEndKey;
+    int span     = endKey - startKey;
+
+    for (int key = 0; key < 88; ++key)
+    {
+        double evenStrength;
+        double a0 = audioProcessor.lastAppliedEvenMorphA0;
+        double c8 = audioProcessor.lastAppliedEvenMorphC8;
+        if (key <= startKey)
+            evenStrength = a0;
+        else if (key >= endKey)
+            evenStrength = c8;
+        else
+        {
+            double t = ((double)(key - startKey) / span) * 2.0 - 1.0;
+            evenStrength = a0 + (c8 - a0) * shapeFunction (t);
+        }
+        audioProcessor.evenMorphStrength[key] = evenStrength;
+
+        int base  = audioProcessor.keyStartIndex[key];
+        int count = audioProcessor.harmonicCounts[key];
+        for (int h = 0; h < count; ++h)
+        {
+            int n = audioProcessor.oscillators[base + h].harmonicNumber;
+            double amp = 1.0 / n;
+            if (n % 2 == 0)
+                amp *= evenStrength;
+            audioProcessor.oscillators[base + h].amplitude = amp;
+        }
+        recalculateKeyVolume (key);
     }
     repaint();
     if (selectedKey != -1) rebuildAmplitudeSliders();
@@ -2547,6 +3005,14 @@ void SineLabAudioProcessorEditor::wireShapeButtons()
         };
         expShapeButton.onClick      = [this, makeExpShape] { applyShapeToKeyVolume (makeExpShape (audioProcessor.lastAppliedExpKKeyVolume)); };
     }
+    else if (activeTab == 1 && activeAmpSubTab == 3)
+    {
+        linearShapeButton.onClick   = [this] { applyShapeToEvenMorph ([] (double t) { return (t + 1.0) / 2.0; }); };
+        cubicShapeButton.onClick    = [this] { applyShapeToEvenMorph ([] (double t) { double u = (t + 1.0) / 2.0; return 3.0*u*u - 2.0*u*u*u; }); };
+        squaredShapeButton.onClick  = [this] { applyShapeToEvenMorph ([] (double t) { return t * t; }); };
+        absValueShapeButton.onClick = [this] { applyShapeToEvenMorph ([] (double t) { return std::abs (t); }); };
+        expShapeButton.onClick      = [this, makeExpShape] { applyShapeToEvenMorph (makeExpShape (audioProcessor.lastAppliedExpKEvenMorph)); };
+    }
     else if (activeTab == 2 && activeTuningSubTab == 1)
     {
         linearShapeButton.onClick   = [this] { applyShapeToStretch ([] (double t) { return (t + 1.0) / 2.0; }); };
@@ -2641,6 +3107,46 @@ void SineLabAudioProcessorEditor::wireShapeButtons()
         absValueShapeButton.onClick = [this] { lastDecayIIShape = [] (double t) { return std::abs(t); };                                              applyShapeToDecayHarmonics (lastDecayIIShape); };
         expShapeButton.onClick      = [this, makeExpShape] { lastDecayIIShape = makeExpShape (audioProcessor.lastAppliedExpKDecay2); applyShapeToDecayHarmonics (lastDecayIIShape); };
     }
+    else if (activeTab == 7)
+    {
+        sustainLinearButton.onClick   = [this] { applyShapeToSustain ([] (double t) { return (t + 1.0) / 2.0; }); };
+        sustainCubicButton.onClick    = [this] { applyShapeToSustain ([] (double t) { double u=(t+1.0)/2.0; return 3.0*u*u-2.0*u*u*u; }); };
+        sustainSquaredButton.onClick  = [this] {
+            double a0 = audioProcessor.lastAppliedSustainA0;
+            int startKey = audioProcessor.lastAppliedSustainStartKey;
+            int endKey   = audioProcessor.lastAppliedSustainEndKey;
+            int span     = endKey - startKey;
+            for (int key = 0; key < 88; ++key)
+            {
+                double v;
+                if (key <= startKey) v = a0;
+                else if (key >= endKey) v = audioProcessor.lastAppliedSustainC8;
+                else { double t = (span > 0) ? (double)(key-startKey)/span*2.0-1.0 : -1.0; v = juce::jlimit(0.0,1.0,a0*t*t); }
+                int si = audioProcessor.keyStartIndex[key];
+                for (int h = 0; h < audioProcessor.harmonicCounts[key]; ++h)
+                    audioProcessor.oscillators[si+h].sustainLevel = v;
+            }
+            repaint(); if (selectedKey != -1) rebuildSustainSliders();
+        };
+        sustainAbsValueButton.onClick = [this] {
+            double a0 = audioProcessor.lastAppliedSustainA0;
+            int startKey = audioProcessor.lastAppliedSustainStartKey;
+            int endKey   = audioProcessor.lastAppliedSustainEndKey;
+            int span     = endKey - startKey;
+            for (int key = 0; key < 88; ++key)
+            {
+                double v;
+                if (key <= startKey) v = a0;
+                else if (key >= endKey) v = audioProcessor.lastAppliedSustainC8;
+                else { double t = (span > 0) ? (double)(key-startKey)/span*2.0-1.0 : -1.0; v = juce::jlimit(0.0,1.0,a0*std::abs(t)); }
+                int si = audioProcessor.keyStartIndex[key];
+                for (int h = 0; h < audioProcessor.harmonicCounts[key]; ++h)
+                    audioProcessor.oscillators[si+h].sustainLevel = v;
+            }
+            repaint(); if (selectedKey != -1) rebuildSustainSliders();
+        };
+        sustainExpButton.onClick      = [this, makeExpShape] { applyShapeToSustain (makeExpShape (audioProcessor.lastAppliedExpKSustain)); };
+    }
     else if (activeTab == 8)
     {
         linearShapeButton.onClick   = [this] { applyShapeToRelease ([] (double t) { return (t + 1.0) / 2.0; }); };
@@ -2677,6 +3183,8 @@ void SineLabAudioProcessorEditor::expSteepnessApplied()
         audioProcessor.lastAppliedExpKAmp = value;
     else if (activeTab == 1 && activeAmpSubTab == 2)
         audioProcessor.lastAppliedExpKKeyVolume = value;
+    else if (activeTab == 1 && activeAmpSubTab == 3)
+        audioProcessor.lastAppliedExpKEvenMorph = value;
     else if (activeTab == 2 && activeTuningSubTab == 1)
         audioProcessor.lastAppliedExpKTuning1 = value;
     else if (activeTab == 2 && activeTuningSubTab == 2)
@@ -2955,6 +3463,7 @@ void SineLabAudioProcessorEditor::globalSustainApplied()
     for (auto& osc : audioProcessor.oscillators)
         osc.sustainLevel = value;
 
+    repaint();
     globalSustainTextBox.giveAwayKeyboardFocus();
 }
 
@@ -3125,8 +3634,8 @@ void SineLabAudioProcessorEditor::rebuildAttackSliders()
     for (int h = 0; h < count; ++h)
     {
         auto* slider = setupHorizontalHarmonicSlider (attackContainer, attackLabels, 0.0, 1.0, 0.0001, h, count, audioProcessor.oscillators[startIndex + h].attackTime, [this] (int harmonicIndex) { attackSliderChanged (harmonicIndex); });
-        
-        
+
+
         attackSliders.add (slider);
     }
 
@@ -3179,6 +3688,7 @@ void SineLabAudioProcessorEditor::sustainSliderChanged (int harmonicIndex)
     {
         int index = audioProcessor.keyStartIndex[selectedKey] + harmonicIndex;
         audioProcessor.oscillators[index].sustainLevel = sustainSliders[harmonicIndex]->getValue();
+        repaint();
     }
 }
 
@@ -3318,13 +3828,13 @@ juce::Slider* SineLabAudioProcessorEditor::setupHorizontalHarmonicSlider (juce::
 
     container.addAndMakeVisible (slider);
     int yPos = topPadding + (harmonicCount - 1 - harmonicIndex) * 30;
-    slider->setBounds (20, yPos, fixedSliderWidth, 30);
+    slider->setBounds (26, yPos, fixedSliderWidth, 30);
     auto* label = new juce::Label();
     label->setText (juce::String (harmonicIndex + 1), juce::dontSendNotification);
     label->setJustificationType (juce::Justification::centredLeft);
     label->setColour (juce::Label::textColourId, juce::Colours::black);
     label->setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
-    label->setBounds (0, yPos, 18, 30);
+    label->setBounds (0, yPos, 24, 30);
 
     container.addAndMakeVisible (label);
     labelArray.add (label);
@@ -3521,6 +4031,11 @@ void SineLabAudioProcessorEditor::paintAttackGraph (juce::Graphics& g)
     paintBarGraph (g, [this] (int fi) { return audioProcessor.oscillators[fi].setAttackTime; }, 0.025);
 }
 
+void SineLabAudioProcessorEditor::paintSustainGraph (juce::Graphics& g)
+{
+    paintBarGraph (g, [this] (int fi) { return audioProcessor.oscillators[fi].sustainLevel; }, 1.0);
+}
+
 void SineLabAudioProcessorEditor::paintAmpGraph (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -3626,6 +4141,63 @@ void SineLabAudioProcessorEditor::paintKeyVolumeGraph (juce::Graphics& g)
     }
 }
 
+void SineLabAudioProcessorEditor::paintEvenMorphGraph (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds();
+    float keyboardAreaHeight = bounds.getHeight() / 8.0f;
+    int graphTop    = (int) (bounds.getHeight() / 16.0f);
+    int graphBottom = (int) (bounds.getHeight() - keyboardAreaHeight);
+    int graphLeft   = 0;
+    int graphRight  = (bounds.getWidth() * 3) / 4;
+    float usableHeight = (float) (graphBottom - graphTop);
+    float graphWidth   = (float) (graphRight - graphLeft);
+
+    // grid
+    g.setColour (juce::Colours::lightgrey);
+    for (int step = 1; step <= 9; ++step)
+    {
+        float lineY = (float) graphTop + (usableHeight / 10.0f) * (float) step;
+        g.drawLine ((float) graphLeft, lineY, (float) graphRight, lineY, 0.5f);
+    }
+    float slotWidth = graphWidth / 44.0f;
+    for (int i = 1; i < 44; ++i)
+    {
+        float lineX = (float) graphLeft + slotWidth * (float) i;
+        g.drawLine (lineX, (float) graphTop, lineX, (float) graphBottom, 0.5f);
+    }
+
+    // border
+    g.setColour (juce::Colours::black);
+    g.drawLine ((float) graphLeft,  (float) graphTop,    (float) graphLeft,  (float) graphBottom, 1.0f);
+    g.drawLine ((float) graphRight, (float) graphTop,    (float) graphRight, (float) graphBottom, 1.0f);
+    g.drawLine ((float) graphLeft,  (float) graphBottom, (float) graphRight, (float) graphBottom, 1.0f);
+
+    // bars
+    float fullSlotWidth = graphWidth / 88.0f;
+    float barWidth = fullSlotWidth / 2.0f;
+    g.setColour (juce::Colours::black);
+    for (int key = 0; key < 88; ++key)
+    {
+        float v    = (float) juce::jlimit (0.0, 1.0, audioProcessor.evenMorphStrength[key]);
+        float barH = v * usableHeight;
+        float barX = (float) graphLeft + fullSlotWidth * (float) key + (fullSlotWidth / 4.0f);
+        float barY = (float) graphBottom - barH;
+        g.fillRect (barX, barY, barWidth, barH);
+    }
+
+    // smoothed line
+    juce::Array<juce::Point<float>> pathPoints;
+    for (int key = 0; key < 88; ++key)
+    {
+        float v = (float) juce::jlimit (0.0, 1.0, audioProcessor.evenMorphStrength[key]);
+        float x = (float) graphLeft + graphWidth * (float) key / 87.0f;
+        float y = (float) graphBottom - v * usableHeight;
+        pathPoints.add ({ x, y });
+    }
+    g.setColour (juce::Colours::blue);
+    drawSmoothedPath (g, pathPoints);
+}
+
 void SineLabAudioProcessorEditor::paintToggleGraph (juce::Graphics& g, int componentWidth, int componentHeight)
 {
     float colWidth  = (float) componentWidth / 88.0f;
@@ -3663,14 +4235,7 @@ void SineLabAudioProcessorEditor::paintToggleGraph (juce::Graphics& g, int compo
 
             int   row = 726 - i;
             float y   = (float) row * slotH;
-            juce::Colour slotColour;
-            if (i % 2 == 0)
-                slotColour = juce::Colours::black;
-            else if ((i / 2) % 2 == 0)
-                slotColour = juce::Colours::limegreen;
-            else
-                slotColour = juce::Colours::blue;
-            g.setColour (slotColour);
+            g.setColour (juce::Colours::black);
             g.drawRect (colX, y, colWidth, slotH, 1.0f);
         }
     }

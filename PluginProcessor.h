@@ -92,6 +92,7 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    void updateActiveRanks();
     //==============================================================================
     std::vector<OscillatorState> oscillators;
     std::vector<int> harmonicCounts;
@@ -114,6 +115,12 @@ public:
     int    lastAppliedKeyVolumeEndKey   = 87;
     int    lastAppliedExpKKeyVolume     = 4;
     double globalKeyVolumeValue         = 1.0;
+    int    lastAppliedExpKEvenMorph      = 4;
+    int    lastAppliedEvenMorphStartKey  = 0;
+    int    lastAppliedEvenMorphEndKey    = 87;
+    double lastAppliedEvenMorphA0        = 1.0;
+    double lastAppliedEvenMorphC8        = 0.0;
+    double evenMorphStrength[88]         = {};
 
     double lastAppliedAttackA0 = 0.0001;
     double lastAppliedAttackC8 = 0.0001;
@@ -167,6 +174,11 @@ public:
     double lastAppliedPanWidth = 1.0;
     double globalAttackValue = 0.0;
     double globalSustainValue = 1.0;
+    int    lastAppliedSustainStartKey = 0;
+    double lastAppliedSustainA0       = 1.0;
+    int    lastAppliedSustainEndKey   = 87;
+    double lastAppliedSustainC8       = 1.0;
+    int    lastAppliedExpKSustain     = 0;
     double globalDecayValue = 0.0001;
     double globalReleaseValue = 0.0001;
     
