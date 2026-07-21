@@ -1,5 +1,5 @@
 # sineLab
-sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE and Claude.
+sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE and Claude. Hear a demo of sineLab here: https://youtu.be/7iIjeCGsYqM?si=Okd8r05ycU0CrXMJ
 
 *Note
 sineLab has only been tested using macOS. sineLab is also quite computationally heavy, but this is directly proportional to how many oscillators an active MIDI key has. Further, collapsing the DAW's plugin window for some reason obstructs the PAN and ATTACK tabs. Thus, leaving the window fully expanded results in no obstruction.
