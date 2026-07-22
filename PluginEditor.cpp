@@ -2034,8 +2034,8 @@ void SineLabAudioProcessorEditor::rebuildToggleButtons()
 
         bool outOfRange  = (thisOsc.tuningCents >= thisOsc.audibleMaxCents || thisOsc.tuningCents <= thisOsc.maxDownwardCents);
         bool ampOff      = (thisOsc.amplitude < 0.0001);
-        bool attackOff   = (thisOsc.attackTime == 0.0);
-        bool decayOff    = (thisOsc.decayTime == 0.0 && thisOsc.sustainLevel == 0.0);
+        bool attackOff   = (thisOsc.attackTime == 0.0f);
+        bool decayOff    = (thisOsc.decayTime == 0.0f && thisOsc.sustainLevel == 0.0f);
         bool isSilent    = outOfRange || ampOff || attackOff || decayOff || thisOsc.aboveCeiling;
         auto indicatorColour = isSilent ? juce::Colours::lightgrey : juce::Colours::black;
         button->setColour (juce::ToggleButton::tickColourId,         indicatorColour);

@@ -40,18 +40,19 @@ struct OscillatorState
     float leftGain = 1.0f;
     float rightGain = 1.0f;
     
-    double attackTime = 0.0001;
-    double setAttackTime = 0.0001;
-    double decayTime = 0.0001;
-    double sustainLevel = 1.0;
-    double envelopeElapsed = 0.0;
+    float attackTime = 0.0001f;
+    float setAttackTime = 0.0001f;
+    float decayTime = 0.0001f;
+    float sustainLevel = 1.0f;
+    float envelopeElapsed = 0.0f;
     float envelopeValue = 0.0f;
-    
+
     bool isReleasing = false;
-    double releaseElapsed = 0.0;
+    bool inAttack = true;
+    float releaseElapsed = 0.0f;
     float levelAtReleaseStart = 0.0f;
-    double releaseTime = 0.0001;
-    double setReleaseTime = 0.0001;
+    float releaseTime = 0.0001f;
+    float setReleaseTime = 0.0001f;
 
     int activeRank  = 0;
     int activeCount = 1;

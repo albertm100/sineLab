@@ -192,8 +192,9 @@ void SineLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                             oscillators[index].active = true;
                             oscillators[index].midiNoteNumber = noteNumber;
                             oscillators[index].needsFrequencyUpdate = true;
-                            oscillators[index].envelopeElapsed = 0.0;
+                            oscillators[index].envelopeElapsed = 0.0f;
                             oscillators[index].isReleasing = false;
+                            oscillators[index].inAttack = true;
                         }
                     }
                 }
@@ -227,8 +228,10 @@ void SineLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     buffer.clear();
 
         const int numSamples = buffer.getNumSamples();
-        float* const leftChannel = buffer.getNumChannels() >= 1 ? buffer.getWritePointer (0) : nullptr;
+        float* const leftChannel  = buffer.getNumChannels() >= 1 ? buffer.getWritePointer (0) : nullptr;
         float* const rightChannel = buffer.getNumChannels() >= 2 ? buffer.getWritePointer (1) : nullptr;
+        const bool hasLeft  = (leftChannel  != nullptr);
+        const bool hasRight = (rightChannel != nullptr);
         
         const int totalOscillatorCount = (int) oscillators.size();
 
@@ -244,9 +247,9 @@ void SineLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             // Run parameters setup once per oscillator block instead of per-sample
             if (osc.tuningCents >= osc.audibleMaxCents || osc.tuningCents <= osc.maxDownwardCents)
                 continue;
-            if (osc.attackTime == 0.0)
+            if (osc.attackTime == 0.0f)
                 continue;
-            if (osc.decayTime == 0.0 && osc.sustainLevel == 0.0)
+            if (osc.decayTime == 0.0f && osc.sustainLevel == 0.0f)
                 continue;
             if (osc.amplitude == 0.0)
                 continue;
@@ -313,36 +316,50 @@ void SineLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             const float dCos = osc.deltaCos;
             const float dSin = osc.deltaSin;
 
+            // Precompute reciprocals so the sample loop uses multiplies, not divisions (all float)
+            const float invAttackTime  = osc.attackTime  > 0.0f ? 1.0f / osc.attackTime  : 0.0f;
+            const float invDecayTime   = osc.decayTime   > 0.0f ? 1.0f / osc.decayTime   : 0.0f;
+            const float invReleaseTime = osc.releaseTime > 0.0f ? 1.0f / osc.releaseTime : 0.0f;
+            const float sampleInc      = (float) sampleTimeIncrement;
+
             // Process all samples sequentially for this single oscillator
             for (int sample = 0; sample < numSamples; ++sample)
             {
-                osc.envelopeElapsed += sampleTimeIncrement;
+                osc.envelopeElapsed += sampleInc;
 
                 if (osc.isReleasing)
                 {
-                    osc.releaseElapsed += sampleTimeIncrement;
-                    double releaseProgress = juce::jmin (1.0, osc.releaseElapsed / osc.releaseTime);
-                    osc.envelopeValue = (float) (osc.levelAtReleaseStart * (1.0 - releaseProgress));
+                    osc.releaseElapsed += sampleInc;
+                    float releaseProgress = juce::jmin (1.0f, osc.releaseElapsed * invReleaseTime);
+                    osc.envelopeValue = osc.levelAtReleaseStart * (1.0f - releaseProgress);
 
-                    if (releaseProgress >= 1.0)
+                    if (releaseProgress >= 1.0f)
+                    {
                         osc.active = false;
+                        break;
+                    }
                 }
                 else
                 {
-                    double timeIntoDecay = osc.envelopeElapsed - osc.attackTime;
-
-                    if (timeIntoDecay < 0.0)
+                    if (osc.inAttack)
                     {
-                        double attackProgress = osc.envelopeElapsed / osc.attackTime;
-                        osc.envelopeValue = (float) juce::jmin (1.0, attackProgress);
+                        float attackProgress = osc.envelopeElapsed * invAttackTime;
+                        if (attackProgress < 1.0f)
+                        {
+                            osc.envelopeValue = attackProgress;
+                        }
+                        else
+                        {
+                            osc.envelopeValue = 1.0f;
+                            osc.inAttack = false;
+                        }
                     }
                     else
                     {
-                        double decayProgress = juce::jmin (1.0, timeIntoDecay / osc.decayTime);
-                        double decayRemaining = 1.0 - decayProgress;
-                                                osc.envelopeValue = (float) (osc.sustainLevel + (1.0 - osc.sustainLevel) * decayRemaining * decayRemaining * decayRemaining);
-
-
+                        float timeIntoDecay  = osc.envelopeElapsed - osc.attackTime;
+                        float decayProgress  = juce::jmin (1.0f, timeIntoDecay * invDecayTime);
+                        float decayRemaining = 1.0f - decayProgress;
+                        osc.envelopeValue = osc.sustainLevel + (1.0f - osc.sustainLevel) * decayRemaining * decayRemaining * decayRemaining;
                     }
                 }
 
@@ -354,11 +371,11 @@ void SineLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                 rCos = newRotationCos;
                 rSin = newRotationSin;
 
-                // Direct buffer accumulation via pointers avoids function call overhead
-                if (leftChannel)
+                // Null checks hoisted outside loop — booleans set once per block
+                if (hasLeft)
                     leftChannel[sample] += currentSample * lGainCombined;
 
-                if (rightChannel)
+                if (hasRight)
                     rightChannel[sample] += currentSample * rGainCombined;
             }
 
