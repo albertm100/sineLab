@@ -56,7 +56,6 @@ SineLabAudioProcessor::SineLabAudioProcessor()
                 oscillators[keyStartIndex[key] + h].ownerKey = key;
 
                 double thisFrequency = (h + 1) * (440.0 * std::pow (2.0, (key + 21 - 69) / 12.0));
-                                oscillators[keyStartIndex[key] + h].maxUpwardCents = juce::jmax (1, (int) (1200.0 * std::log2 (100000.0 / thisFrequency)));
                                 oscillators[keyStartIndex[key] + h].maxDownwardCents = juce::jmin (-1, (int) (1200.0 * std::log2 (20.0 / thisFrequency)));
                                 oscillators[keyStartIndex[key] + h].audibleMaxCents = juce::jmax (1, (int) (1200.0 * std::log2 (20000.0 / thisFrequency)));
             }
@@ -104,7 +103,10 @@ bool SineLabAudioProcessor::isMidiEffect() const
 
 double SineLabAudioProcessor::getTailLengthSeconds() const
 {
-    return 0.0;
+    // Maximum possible release time — lets DAW bounces wait for the final
+    // release tail instead of cutting at the last note-off. Read-only answer
+    // to the host; affects no parameter and no live behavior.
+    return 1.0;
 }
 
 int SineLabAudioProcessor::getNumPrograms()
@@ -196,6 +198,7 @@ void SineLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                             oscillators[index].isReleasing = false;
                             oscillators[index].inAttack = true;
                         }
+                        keySounding[key] = true;
                     }
                 }
 
@@ -233,27 +236,29 @@ void SineLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         const bool hasLeft  = (leftChannel  != nullptr);
         const bool hasRight = (rightChannel != nullptr);
         
-        const int totalOscillatorCount = (int) oscillators.size();
-
-        for (int note = 0; note < totalOscillatorCount; ++note)
+        for (int key = 0; key < 88; ++key)
         {
-            auto& osc = oscillators[note];
+            if (! keySounding[key]) continue;
 
-            if (! osc.active || osc.manuallyMuted || osc.aboveCeiling)
-                continue;
-            
-            
+            int startIdx = keyStartIndex[key];
+            int count    = harmonicCounts[key];
+            bool anyStillActive = false;
 
-            // Run parameters setup once per oscillator block instead of per-sample
-            if (osc.tuningCents >= osc.audibleMaxCents || osc.tuningCents <= osc.maxDownwardCents)
+            for (int h = 0; h < count; ++h)
+            {
+            auto& osc = oscillators[startIdx + h];
+
+            if (! osc.active)
                 continue;
-            if (osc.attackTime == 0.0f)
+
+            // The key counts as sounding while any oscillator is still active,
+            // even if currently silenced — so restoring a parameter mid-note
+            // is immediately audible without re-striking the key
+            anyStillActive = true;
+
+            if (! osc.isAudible())
                 continue;
-            if (osc.decayTime == 0.0f && osc.sustainLevel == 0.0f)
-                continue;
-            if (osc.amplitude == 0.0)
-                continue;
-            
+
 
                         // Run parameters setup once per oscillator block instead of per-sample
                         if (osc.needsFrequencyUpdate)
@@ -322,69 +327,180 @@ void SineLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             const float invReleaseTime = osc.releaseTime > 0.0f ? 1.0f / osc.releaseTime : 0.0f;
             const float sampleInc      = (float) sampleTimeIncrement;
 
-            // Process all samples sequentially for this single oscillator
-            for (int sample = 0; sample < numSamples; ++sample)
+            // An envelope time of 0 means instantaneous, never "stuck at the start"
+            const bool instantDecay   = (osc.decayTime   <= 0.0f);
+            const bool instantRelease = (osc.releaseTime <= 0.0f);
+            if (osc.attackTime <= 0.0f)
+                osc.inAttack = false;
+
+            // Phase-separated sample loops: envelope segment is determined once before each
+            // loop, so no per-sample branching on isReleasing / inAttack in the hot path.
+            // Transitions are handled by breaking from one loop and falling into the next.
+            int s = 0;
+
+            // RELEASE phase
+            if (osc.isReleasing)
             {
-                osc.envelopeElapsed += sampleInc;
-
-                if (osc.isReleasing)
+                float startVal = osc.envelopeValue;
+                float endVal = 0.0f;
+                int limit = numSamples;
+                
+                if (osc.releaseTime > 0.0f)
                 {
-                    osc.releaseElapsed += sampleInc;
-                    float releaseProgress = juce::jmin (1.0f, osc.releaseElapsed * invReleaseTime);
-                    osc.envelopeValue = osc.levelAtReleaseStart * (1.0f - releaseProgress);
-
-                    if (releaseProgress >= 1.0f)
+                    double remainingTime = osc.releaseTime - osc.releaseElapsed;
+                    int samplesToFinish = (int)std::ceil(remainingTime / sampleInc);
+                    if (samplesToFinish < numSamples)
                     {
-                        osc.active = false;
-                        break;
-                    }
-                }
-                else
-                {
-                    if (osc.inAttack)
-                    {
-                        float attackProgress = osc.envelopeElapsed * invAttackTime;
-                        if (attackProgress < 1.0f)
-                        {
-                            osc.envelopeValue = attackProgress;
-                        }
-                        else
-                        {
-                            osc.envelopeValue = 1.0f;
-                            osc.inAttack = false;
-                        }
+                        limit = std::max(0, samplesToFinish);
                     }
                     else
                     {
-                        float timeIntoDecay  = osc.envelopeElapsed - osc.attackTime;
-                        float decayProgress  = juce::jmin (1.0f, timeIntoDecay * invDecayTime);
-                        float decayRemaining = 1.0f - decayProgress;
-                        osc.envelopeValue = osc.sustainLevel + (1.0f - osc.sustainLevel) * decayRemaining * decayRemaining * decayRemaining;
+                        double nextReleaseElapsed = osc.releaseElapsed + numSamples * sampleInc;
+                        float endProgress = (float)(nextReleaseElapsed * invReleaseTime);
+                        endVal = osc.levelAtReleaseStart * (1.0f - std::min(1.0f, endProgress));
                     }
                 }
+                
+                float env = startVal;
+                float envStep = (limit > 0) ? (endVal - startVal) / limit : 0.0f;
+                
+                for (; s < limit; ++s)
+                {
+                    const float sv = rSin * env;
+                    const float nc = rCos * dCos - rSin * dSin;
+                    const float ns = rSin * dCos + rCos * dSin;
+                    rCos = nc; rSin = ns;
+                    if (hasLeft)  leftChannel[s]  += sv * lGainCombined;
+                    if (hasRight) rightChannel[s] += sv * rGainCombined;
+                    env += envStep;
+                }
+                
+                osc.releaseElapsed += limit * sampleInc;
+                osc.envelopeElapsed += limit * sampleInc;
+                osc.envelopeValue = env;
+                
+                if (limit < numSamples)
+                {
+                    osc.active = false;
+                }
+            }
 
-                const float currentSample = rSin * osc.envelopeValue;
+            // ATTACK phase
+            if (osc.active && osc.inAttack)
+            {
+                float startVal = osc.envelopeValue;
+                float endVal = 1.0f;
+                int limit = numSamples - s;
+                
+                if (osc.attackTime > 0.0f)
+                {
+                    double remainingTime = osc.attackTime - osc.envelopeElapsed;
+                    int samplesToFinish = (int)std::ceil(remainingTime / sampleInc);
+                    if (samplesToFinish < (numSamples - s))
+                    {
+                        limit = std::max(0, samplesToFinish);
+                    }
+                    else
+                    {
+                        double nextEnvelopeElapsed = osc.envelopeElapsed + limit * sampleInc;
+                        endVal = (float)(nextEnvelopeElapsed * invAttackTime);
+                    }
+                }
+                
+                float env = startVal;
+                float envStep = (limit > 0) ? (endVal - startVal) / limit : 0.0f;
+                int endS = s + limit;
+                
+                for (; s < endS; ++s)
+                {
+                    const float sv = rSin * env;
+                    const float nc = rCos * dCos - rSin * dSin;
+                    const float ns = rSin * dCos + rCos * dSin;
+                    rCos = nc; rSin = ns;
+                    if (hasLeft)  leftChannel[s]  += sv * lGainCombined;
+                    if (hasRight) rightChannel[s] += sv * rGainCombined;
+                    env += envStep;
+                }
+                
+                osc.envelopeElapsed += limit * sampleInc;
+                osc.envelopeValue = env;
+                
+                if (osc.envelopeElapsed >= osc.attackTime)
+                {
+                    osc.envelopeValue = 1.0f;
+                    osc.inAttack = false;
+                }
+            }
 
-                // Compute complex rotation
-                const float newRotationCos = rCos * dCos - rSin * dSin;
-                const float newRotationSin = rSin * dCos + rCos * dSin;
-                rCos = newRotationCos;
-                rSin = newRotationSin;
-
-                // Null checks hoisted outside loop — booleans set once per block
-                if (hasLeft)
-                    leftChannel[sample] += currentSample * lGainCombined;
-
-                if (hasRight)
-                    rightChannel[sample] += currentSample * rGainCombined;
+            // DECAY / SUSTAIN phase
+            if (osc.active)
+            {
+                float startVal = osc.envelopeValue;
+                int limit = numSamples - s;
+                float endVal = osc.sustainLevel;
+                
+                if (osc.decayTime > 0.0f)
+                {
+                    double timeIntoDecay = osc.envelopeElapsed - osc.attackTime;
+                    double remainingTime = osc.decayTime - timeIntoDecay;
+                    int samplesToFinish = (int)std::ceil(remainingTime / sampleInc);
+                    
+                    if (samplesToFinish < limit)
+                    {
+                        limit = std::max(0, samplesToFinish);
+                    }
+                    else
+                    {
+                        double nextEnvelopeElapsed = osc.envelopeElapsed + limit * sampleInc;
+                        double nextTimeIntoDecay = nextEnvelopeElapsed - osc.attackTime;
+                        float decayProgress = (float)(nextTimeIntoDecay * invDecayTime);
+                        float decayRemaining = 1.0f - std::min(1.0f, decayProgress);
+                        endVal = osc.sustainLevel + (1.0f - osc.sustainLevel) * decayRemaining * decayRemaining * decayRemaining;
+                    }
+                }
+                
+                float env = startVal;
+                float envStep = (limit > 0) ? (endVal - startVal) / limit : 0.0f;
+                int endS = s + limit;
+                
+                for (; s < endS; ++s)
+                {
+                    const float sv = rSin * env;
+                    const float nc = rCos * dCos - rSin * dSin;
+                    const float ns = rSin * dCos + rCos * dSin;
+                    rCos = nc; rSin = ns;
+                    if (hasLeft)  leftChannel[s]  += sv * lGainCombined;
+                    if (hasRight) rightChannel[s] += sv * rGainCombined;
+                    env += envStep;
+                }
+                osc.envelopeElapsed += limit * sampleInc;
+                osc.envelopeValue = env;
+                
+                if (s < numSamples)
+                {
+                    int remainingSamples = numSamples - s;
+                    for (; s < numSamples; ++s)
+                    {
+                        const float sv = rSin * osc.sustainLevel;
+                        const float nc = rCos * dCos - rSin * dSin;
+                        const float ns = rSin * dCos + rCos * dSin;
+                        rCos = nc; rSin = ns;
+                        if (hasLeft)  leftChannel[s]  += sv * lGainCombined;
+                        if (hasRight) rightChannel[s] += sv * rGainCombined;
+                    }
+                    osc.envelopeElapsed += remainingSamples * sampleInc;
+                    osc.envelopeValue = osc.sustainLevel;
+                }
             }
 
             // Save current phase state back to the struct for the next block
             osc.rotationCos = rCos;
             osc.rotationSin = rSin;
-        }
-    
-    
+            } // end harmonic loop
+
+            if (! anyStillActive)
+                keySounding[key] = false;
+        } // end key loop
 }
 
 
@@ -402,245 +518,221 @@ juce::AudioProcessorEditor* SineLabAudioProcessor::createEditor()
 //==============================================================================
 void SineLabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    juce::XmlElement xml ("SineLabState");
+    juce::XmlElement root ("SineLab");
+
+    root.setAttribute ("globalToggleState",        (int) globalToggleState);
+    root.setAttribute ("firstHarmonicToggleState", (int) firstHarmonicToggleState);
+    root.setAttribute ("evensToggleState",         (int) evensToggleState);
+    root.setAttribute ("primesToggleState",        (int) primesToggleState);
+    root.setAttribute ("everyNToggleState",        (int) everyNToggleState);
+    root.setAttribute ("everyNValue",              everyNValue);
+    root.setAttribute ("globalAmpValue",           globalAmpValue);
+    root.setAttribute ("globalTuningValue",        globalTuningValue);
+    root.setAttribute ("globalPhaseValue",         globalPhaseValue);
+    root.setAttribute ("globalPanValue",           globalPanValue);
+    root.setAttribute ("lastAppliedPanWidth",      lastAppliedPanWidth);
+    root.setAttribute ("globalAttackValue",        globalAttackValue);
+    root.setAttribute ("globalSustainValue",       globalSustainValue);
+    root.setAttribute ("lastAppliedSustainStartKey", lastAppliedSustainStartKey);
+    root.setAttribute ("lastAppliedSustainEndKey",   lastAppliedSustainEndKey);
+    root.setAttribute ("lastAppliedExpKSustain",     lastAppliedExpKSustain);
+    root.setAttribute ("globalDecayValue",         globalDecayValue);
+    root.setAttribute ("globalReleaseValue",       globalReleaseValue);
+    root.setAttribute ("normalizationEnabled",     (int) normalizationEnabled);
+    root.setAttribute ("taperCTEnabled",           (int) taperCTEnabled);
+    root.setAttribute ("taperACTEnabled",          (int) taperACTEnabled);
+    root.setAttribute ("lastAppliedAmpStartKey",       lastAppliedAmpStartKey);
+    root.setAttribute ("lastAppliedAmpEndKey",         lastAppliedAmpEndKey);
+    root.setAttribute ("lastAppliedKeyVolumeStartKey", lastAppliedKeyVolumeStartKey);
+    root.setAttribute ("lastAppliedKeyVolumeEndKey",   lastAppliedKeyVolumeEndKey);
+    root.setAttribute ("lastAppliedExpKKeyVolume",     lastAppliedExpKKeyVolume);
+    root.setAttribute ("lastAppliedExpKAmp",           lastAppliedExpKAmp);
+    root.setAttribute ("lastAppliedDecayIIThreshold",  lastAppliedDecayIIThreshold);
+    root.setAttribute ("lastAppliedToggleA0",          lastAppliedToggleA0);
+    root.setAttribute ("lastAppliedToggleC8",          lastAppliedToggleC8);
+    root.setAttribute ("lastAppliedExpKToggle",        lastAppliedExpKToggle);
+    root.setAttribute ("lastAppliedExpKTuning1",       lastAppliedExpKTuning1);
+    root.setAttribute ("lastAppliedExpKTuning2",       lastAppliedExpKTuning2);
+    root.setAttribute ("lastAppliedExpKAttack",        lastAppliedExpKAttack);
+    root.setAttribute ("lastAppliedExpKDecay1",        lastAppliedExpKDecay1);
+    root.setAttribute ("lastAppliedExpKDecay2",        lastAppliedExpKDecay2);
+    root.setAttribute ("lastAppliedExpKRelease",       lastAppliedExpKRelease);
+    root.setAttribute ("lastAppliedExpKPhase",         lastAppliedExpKPhase);
+    root.setAttribute ("lastAppliedExpKEvenMorph",     lastAppliedExpKEvenMorph);
+    root.setAttribute ("lastAppliedEvenMorphStartKey", lastAppliedEvenMorphStartKey);
+    root.setAttribute ("lastAppliedEvenMorphEndKey",   lastAppliedEvenMorphEndKey);
+    root.setAttribute ("lastAppliedNToNSquaredStartKey", lastAppliedNToNSquaredStartKey);
+    root.setAttribute ("lastAppliedNToNSquaredEndKey",   lastAppliedNToNSquaredEndKey);
+    root.setAttribute ("lastAppliedExpKNToNSquared",     lastAppliedExpKNToNSquared);
+    root.setAttribute ("lastAppliedAttackRand",         lastAppliedAttackRand);
+    root.setAttribute ("lastAppliedPhaseRand",          lastAppliedPhaseRand);
+    root.setAttribute ("lastAppliedReleaseRand",        lastAppliedReleaseRand);
+    root.setAttribute ("lastAppliedAmpA0",           lastAppliedAmpA0);
+    root.setAttribute ("lastAppliedAmpC8",           lastAppliedAmpC8);
+    root.setAttribute ("lastAppliedKeyVolumeA0",     lastAppliedKeyVolumeA0);
+    root.setAttribute ("lastAppliedKeyVolumeC8",     lastAppliedKeyVolumeC8);
+    root.setAttribute ("lastAppliedEvenMorphA0",     lastAppliedEvenMorphA0);
+    root.setAttribute ("lastAppliedEvenMorphC8",     lastAppliedEvenMorphC8);
+    root.setAttribute ("lastAppliedStretchA0",       lastAppliedStretchA0);
+    root.setAttribute ("lastAppliedStretchC8",       lastAppliedStretchC8);
+    root.setAttribute ("lastAppliedInharmonicityA0", lastAppliedInharmonicityA0);
+    root.setAttribute ("lastAppliedInharmonicityC8", lastAppliedInharmonicityC8);
+    root.setAttribute ("lastAppliedPhaseA0",         lastAppliedPhaseA0);
+    root.setAttribute ("lastAppliedPhaseC8",         lastAppliedPhaseC8);
+    root.setAttribute ("lastAppliedAttackA0",        lastAppliedAttackA0);
+    root.setAttribute ("lastAppliedAttackC8",        lastAppliedAttackC8);
+    root.setAttribute ("lastAppliedDecayA0",         lastAppliedDecayA0);
+    root.setAttribute ("lastAppliedDecayC8",         lastAppliedDecayC8);
+    root.setAttribute ("lastAppliedSustainA0",       lastAppliedSustainA0);
+    root.setAttribute ("lastAppliedSustainC8",       lastAppliedSustainC8);
+    root.setAttribute ("lastAppliedReleaseA0",       lastAppliedReleaseA0);
+    root.setAttribute ("lastAppliedReleaseC8",       lastAppliedReleaseC8);
+
+    for (int key = 0; key < 88; ++key)
+    {
+        auto* k = root.createNewChildElement ("Key");
+        k->setAttribute ("kv",  keyVolume[key]);
+        k->setAttribute ("kb",  keyInharmonicityB[key]);
+        k->setAttribute ("kdc", keyDutyCycle[key]);
+        k->setAttribute ("kem", evenMorphStrength[key]);
+    }
 
     for (int i = 0; i < (int) oscillators.size(); ++i)
     {
-        auto* oscXml = xml.createNewChildElement ("Oscillator");
-        oscXml->setAttribute ("index", i);
-        oscXml->setAttribute ("amplitude", oscillators[i].amplitude);
-        oscXml->setAttribute ("manuallyMuted", oscillators[i].manuallyMuted);
-        oscXml->setAttribute ("tuningCents", oscillators[i].tuningCents);
-                oscXml->setAttribute ("stretchCents", oscillators[i].stretchCents);
-                oscXml->setAttribute ("inharmonicityCents", oscillators[i].inharmonicityCents);
-        
-        oscXml->setAttribute ("startPhaseDegrees", oscillators[i].startPhaseDegrees);
-        oscXml->setAttribute ("setStartPhaseDegrees", oscillators[i].setStartPhaseDegrees);
-        oscXml->setAttribute ("pan", oscillators[i].pan);
-        oscXml->setAttribute ("attackTime", oscillators[i].attackTime);
-        oscXml->setAttribute ("decayTime", oscillators[i].decayTime);
-        oscXml->setAttribute ("decayShapeRatio", oscillators[i].decayShapeRatio);
-        oscXml->setAttribute ("sustainLevel", oscillators[i].sustainLevel);
-        oscXml->setAttribute ("releaseTime", oscillators[i].releaseTime);
-        oscXml->setAttribute ("aboveCeiling", oscillators[i].aboveCeiling);
+        auto* o = root.createNewChildElement ("O");
+        o->setAttribute ("a",   oscillators[i].amplitude);
+        o->setAttribute ("m",   (int) oscillators[i].manuallyMuted);
+        o->setAttribute ("tc",  oscillators[i].tuningCents);
+        o->setAttribute ("sc",  oscillators[i].stretchCents);
+        o->setAttribute ("ic",  oscillators[i].inharmonicityCents);
+        o->setAttribute ("spd", oscillators[i].startPhaseDegrees);
+        o->setAttribute ("sspd",oscillators[i].setStartPhaseDegrees);
+        o->setAttribute ("pan", oscillators[i].pan);
+        o->setAttribute ("at",  oscillators[i].attackTime);
+        o->setAttribute ("dt",  oscillators[i].decayTime);
+        o->setAttribute ("dsr", oscillators[i].decayShapeRatio);
+        o->setAttribute ("sl",  oscillators[i].sustainLevel);
+        o->setAttribute ("rt",  oscillators[i].releaseTime);
+        o->setAttribute ("ac",  (int) oscillators[i].aboveCeiling);
     }
-    
-    for (int key = 0; key < 88; ++key)
-        {
-            auto* keyXml = xml.createNewChildElement ("KeyState");
-            keyXml->setAttribute ("key", key);
-            keyXml->setAttribute ("keyVolume", keyVolume[key]);
-            keyXml->setAttribute ("inharmonicityB", keyInharmonicityB[key]);
-            keyXml->setAttribute ("dutyCycle", keyDutyCycle[key]);
-            keyXml->setAttribute ("evenMorphStrength", evenMorphStrength[key]);
-        }
-    
-    
-    auto* globalXml = xml.createNewChildElement ("GlobalState");
-    globalXml->setAttribute ("globalToggle",        globalToggleState);
-    globalXml->setAttribute ("firstHarmonicToggle", firstHarmonicToggleState);
-    globalXml->setAttribute ("evensToggle",         evensToggleState);
-    globalXml->setAttribute ("primesToggle",        primesToggleState);
-    globalXml->setAttribute ("globalAmp", globalAmpValue);
-    globalXml->setAttribute ("globalTuning", globalTuningValue);
-    globalXml->setAttribute ("globalPhase", globalPhaseValue);
-    globalXml->setAttribute ("globalPan", globalPanValue);
-    globalXml->setAttribute ("lastAppliedPanWidth", lastAppliedPanWidth);
-    globalXml->setAttribute ("globalAttack", globalAttackValue);
-    globalXml->setAttribute ("globalSustain",             globalSustainValue);
-    globalXml->setAttribute ("lastAppliedSustainStartKey", lastAppliedSustainStartKey);
-    globalXml->setAttribute ("lastAppliedSustainA0",       lastAppliedSustainA0);
-    globalXml->setAttribute ("lastAppliedSustainEndKey",   lastAppliedSustainEndKey);
-    globalXml->setAttribute ("lastAppliedSustainC8",       lastAppliedSustainC8);
-    globalXml->setAttribute ("lastAppliedExpKSustain",     lastAppliedExpKSustain);
-    globalXml->setAttribute ("globalDecay", globalDecayValue);
-    globalXml->setAttribute ("globalRelease", globalReleaseValue);
-    globalXml->setAttribute ("normalizationEnabled", normalizationEnabled);
-    globalXml->setAttribute ("taperCTEnabled",  taperCTEnabled);
-    globalXml->setAttribute ("taperACTEnabled", taperACTEnabled);
-    globalXml->setAttribute ("lastAppliedStretchA0", lastAppliedStretchA0);
-    
-    
-    globalXml->setAttribute ("lastAppliedStretchC8", lastAppliedStretchC8);
-    globalXml->setAttribute ("lastAppliedInharmonicityA0", lastAppliedInharmonicityA0);
-    globalXml->setAttribute ("lastAppliedInharmonicityC8", lastAppliedInharmonicityC8);
-    globalXml->setAttribute ("lastAppliedAmpA0", lastAppliedAmpA0);
-    globalXml->setAttribute ("lastAppliedAmpC8", lastAppliedAmpC8);
-    globalXml->setAttribute ("lastAppliedAmpStartKey", lastAppliedAmpStartKey);
-    globalXml->setAttribute ("lastAppliedAmpEndKey", lastAppliedAmpEndKey);
-    globalXml->setAttribute ("lastAppliedKeyVolumeA0",       lastAppliedKeyVolumeA0);
-    globalXml->setAttribute ("lastAppliedKeyVolumeC8",       lastAppliedKeyVolumeC8);
-    globalXml->setAttribute ("lastAppliedKeyVolumeStartKey", lastAppliedKeyVolumeStartKey);
-    globalXml->setAttribute ("lastAppliedKeyVolumeEndKey",   lastAppliedKeyVolumeEndKey);
-    globalXml->setAttribute ("lastAppliedExpKKeyVolume",     lastAppliedExpKKeyVolume);
-    globalXml->setAttribute ("globalKeyVolumeValue",         globalKeyVolumeValue);
-    globalXml->setAttribute ("lastAppliedExpKAmp", lastAppliedExpKAmp);
-    globalXml->setAttribute ("lastAppliedAttackA0", lastAppliedAttackA0);
-    globalXml->setAttribute ("lastAppliedAttackC8", lastAppliedAttackC8);
-    globalXml->setAttribute ("lastAppliedAttackRand", lastAppliedAttackRand);
-    globalXml->setAttribute ("lastAppliedReleaseRand", lastAppliedReleaseRand);
-    globalXml->setAttribute ("lastAppliedDecayA0", lastAppliedDecayA0);
-    globalXml->setAttribute ("lastAppliedDecayC8", lastAppliedDecayC8);
-    globalXml->setAttribute ("lastAppliedDecayIIThreshold", lastAppliedDecayIIThreshold);
-    globalXml->setAttribute ("lastAppliedReleaseA0", lastAppliedReleaseA0);
-    globalXml->setAttribute ("lastAppliedReleaseC8", lastAppliedReleaseC8);
-    globalXml->setAttribute ("lastAppliedToggleA0", lastAppliedToggleA0);
-    globalXml->setAttribute ("lastAppliedToggleC8", lastAppliedToggleC8);
-    globalXml->setAttribute ("lastAppliedExpKToggle",  lastAppliedExpKToggle);
-    globalXml->setAttribute ("lastAppliedExpKTuning1", lastAppliedExpKTuning1);
-    globalXml->setAttribute ("lastAppliedExpKTuning2", lastAppliedExpKTuning2);
-    globalXml->setAttribute ("lastAppliedExpKAttack", lastAppliedExpKAttack);
-    globalXml->setAttribute ("lastAppliedExpKDecay1", lastAppliedExpKDecay1);
-    globalXml->setAttribute ("lastAppliedExpKDecay2", lastAppliedExpKDecay2);
-    globalXml->setAttribute ("lastAppliedExpKRelease", lastAppliedExpKRelease);
-    globalXml->setAttribute ("lastAppliedExpKPhase",   lastAppliedExpKPhase);
-    globalXml->setAttribute ("lastAppliedPhaseA0",     lastAppliedPhaseA0);
-    globalXml->setAttribute ("lastAppliedPhaseC8",     lastAppliedPhaseC8);
-    globalXml->setAttribute ("lastAppliedPhaseRand",   lastAppliedPhaseRand);
-    globalXml->setAttribute ("lastAppliedPhaseEvens",       lastAppliedPhaseEvens);
-    globalXml->setAttribute ("lastAppliedExpKEvenMorph",    lastAppliedExpKEvenMorph);
-    globalXml->setAttribute ("lastAppliedEvenMorphStartKey",lastAppliedEvenMorphStartKey);
-    globalXml->setAttribute ("lastAppliedEvenMorphEndKey",  lastAppliedEvenMorphEndKey);
-    globalXml->setAttribute ("lastAppliedEvenMorphA0",      lastAppliedEvenMorphA0);
-    globalXml->setAttribute ("lastAppliedEvenMorphC8",      lastAppliedEvenMorphC8);
 
-        copyXmlToBinary (xml, destData);
-    
-    
+    copyXmlToBinary (root, destData);
 }
 
 void SineLabAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    std::unique_ptr<juce::XmlElement> xml (getXmlFromBinary (data, sizeInBytes));
-
-    if (xml == nullptr)
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+    if (xml == nullptr || xml->getTagName() != "SineLab")
         return;
 
-    // 1. First restore global properties so oscillator processing can use them
-    auto* globalXml = xml->getChildByName ("GlobalState");
-    if (globalXml != nullptr)
-    {
-        globalToggleState        = globalXml->getBoolAttribute ("globalToggle",        true);
-        firstHarmonicToggleState = globalXml->getBoolAttribute ("firstHarmonicToggle", true);
-        evensToggleState         = globalXml->getBoolAttribute ("evensToggle",         true);
-        primesToggleState        = globalXml->getBoolAttribute ("primesToggle",        true);
-        globalAmpValue = globalXml->getDoubleAttribute ("globalAmp", 1.0);
-        globalTuningValue = globalXml->getIntAttribute ("globalTuning", 0);
-        globalPhaseValue = globalXml->getIntAttribute ("globalPhase", 0);
-        globalPanValue = globalXml->getDoubleAttribute ("globalPan", 0.0);
-        lastAppliedPanWidth = juce::jlimit (-1.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedPanWidth", 1.0));
-        globalAttackValue = globalXml->getDoubleAttribute ("globalAttack", 0.0001);
-        globalSustainValue          = globalXml->getDoubleAttribute ("globalSustain", 1.0);
-        lastAppliedSustainStartKey  = juce::jlimit (0, 87, globalXml->getIntAttribute    ("lastAppliedSustainStartKey", 0));
-        lastAppliedSustainA0        = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedSustainA0",  1.0));
-        lastAppliedSustainEndKey    = juce::jlimit (0, 87, globalXml->getIntAttribute    ("lastAppliedSustainEndKey",  87));
-        lastAppliedSustainC8        = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedSustainC8",  1.0));
-        lastAppliedExpKSustain      = juce::jlimit (-50, 50, globalXml->getIntAttribute  ("lastAppliedExpKSustain",   0));
-        globalDecayValue = globalXml->getDoubleAttribute ("globalDecay", 0.0001);
-        globalReleaseValue = globalXml->getDoubleAttribute ("globalRelease", 0.0001);
-        normalizationEnabled = globalXml->getBoolAttribute ("normalizationEnabled", false);
-        taperCTEnabled  = globalXml->getBoolAttribute ("taperCTEnabled",  false);
-        taperACTEnabled = globalXml->getBoolAttribute ("taperACTEnabled", false);
-        lastAppliedStretchA0 = globalXml->getIntAttribute ("lastAppliedStretchA0", 0);
-        lastAppliedStretchC8 = globalXml->getIntAttribute ("lastAppliedStretchC8", 0);
-        
-        lastAppliedInharmonicityA0 = juce::jlimit (-0.0015, 0.0015, globalXml->getDoubleAttribute ("lastAppliedInharmonicityA0", 0.0));
-        lastAppliedInharmonicityC8 = juce::jlimit (-0.0015, 0.0015, globalXml->getDoubleAttribute ("lastAppliedInharmonicityC8", 0.0));
-        lastAppliedAmpA0 = juce::jlimit (0.0, 0.5, globalXml->getDoubleAttribute ("lastAppliedAmpA0", 0.25));
-        lastAppliedAmpC8 = juce::jlimit (0.0, 0.5, globalXml->getDoubleAttribute ("lastAppliedAmpC8", 0.25));
-        lastAppliedAmpStartKey = juce::jlimit (0, 87, globalXml->getIntAttribute ("lastAppliedAmpStartKey", 0));
-        lastAppliedAmpEndKey   = juce::jlimit (0, 87, globalXml->getIntAttribute ("lastAppliedAmpEndKey", 87));
-        lastAppliedKeyVolumeA0       = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedKeyVolumeA0", 1.0));
-        lastAppliedKeyVolumeC8       = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedKeyVolumeC8", 1.0));
-        lastAppliedKeyVolumeStartKey = juce::jlimit (0, 87, globalXml->getIntAttribute ("lastAppliedKeyVolumeStartKey", 0));
-        lastAppliedKeyVolumeEndKey   = juce::jlimit (0, 87, globalXml->getIntAttribute ("lastAppliedKeyVolumeEndKey", 87));
-        lastAppliedExpKKeyVolume     = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKKeyVolume", 4));
-        globalKeyVolumeValue         = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("globalKeyVolumeValue", 1.0));
-        lastAppliedExpKAmp = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKAmp", 4));
-        lastAppliedAttackA0 = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedAttackA0", 0.0001));
-        lastAppliedAttackC8 = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedAttackC8", 0.0001));
-        lastAppliedAttackRand = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedAttackRand", 0.0));
-        lastAppliedReleaseRand = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedReleaseRand", 0.0));
-        lastAppliedDecayA0 = juce::jlimit (0.0, 10.0, globalXml->getDoubleAttribute ("lastAppliedDecayA0", 0.0));
-        lastAppliedDecayC8 = juce::jlimit (0.0, 10.0, globalXml->getDoubleAttribute ("lastAppliedDecayC8", 0.0));
-        lastAppliedDecayIIThreshold = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedDecayIIThreshold", 0.0));
-        lastAppliedReleaseA0 = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedReleaseA0", 0.0001));
-        lastAppliedReleaseC8 = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedReleaseC8", 0.0001));
-        lastAppliedToggleA0 = juce::jlimit (1, 727, globalXml->getIntAttribute ("lastAppliedToggleA0", 1));
-        lastAppliedToggleC8 = juce::jlimit (1,   4, globalXml->getIntAttribute ("lastAppliedToggleC8", 1));
-        lastAppliedExpKToggle  = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKToggle",  4));
-        lastAppliedExpKTuning1 = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKTuning1", 4));
-        lastAppliedExpKTuning2 = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKTuning2", 4));
-        lastAppliedExpKAttack   = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKAttack",   4));
-        lastAppliedExpKDecay1   = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKDecay1",   4));
-        lastAppliedExpKDecay2   = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKDecay2",   4));
-        lastAppliedExpKRelease  = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKRelease",  4));
-        lastAppliedExpKPhase    = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKPhase",    4));
-        lastAppliedPhaseA0   = juce::jlimit (1, 360, globalXml->getIntAttribute ("lastAppliedPhaseA0", 1));
-        lastAppliedPhaseC8   = juce::jlimit (1, 360, globalXml->getIntAttribute ("lastAppliedPhaseC8", 1));
-        lastAppliedPhaseRand  = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedPhaseRand", 0.0));
-        lastAppliedPhaseEvens        = juce::jlimit (1, 360, globalXml->getIntAttribute ("lastAppliedPhaseEvens", 1));
-        lastAppliedExpKEvenMorph     = juce::jlimit (-20, 20, globalXml->getIntAttribute ("lastAppliedExpKEvenMorph", 4));
-        lastAppliedEvenMorphStartKey = juce::jlimit (0, 87,   globalXml->getIntAttribute    ("lastAppliedEvenMorphStartKey", 0));
-        lastAppliedEvenMorphEndKey   = juce::jlimit (0, 87,   globalXml->getIntAttribute    ("lastAppliedEvenMorphEndKey",   87));
-        lastAppliedEvenMorphA0       = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedEvenMorphA0",       1.0));
-        lastAppliedEvenMorphC8       = juce::jlimit (0.0, 1.0, globalXml->getDoubleAttribute ("lastAppliedEvenMorphC8",       0.0));
-        
-            }
-    
+    globalToggleState        = xml->getBoolAttribute ("globalToggleState",        true);
+    firstHarmonicToggleState = xml->getBoolAttribute ("firstHarmonicToggleState", true);
+    evensToggleState         = xml->getBoolAttribute ("evensToggleState",         true);
+    primesToggleState        = xml->getBoolAttribute ("primesToggleState",        true);
+    everyNToggleState        = xml->getBoolAttribute ("everyNToggleState",        true);
+    everyNValue              = juce::jlimit (2, 999, xml->getIntAttribute ("everyNValue", 3));
+    globalAmpValue           = xml->getDoubleAttribute ("globalAmpValue",         1.0);
+    globalTuningValue        = xml->getIntAttribute    ("globalTuningValue",      0);
+    globalPhaseValue         = xml->getIntAttribute    ("globalPhaseValue",       0);
+    globalPanValue           = xml->getDoubleAttribute ("globalPanValue",         0.0);
+    lastAppliedPanWidth      = juce::jlimit (-1.0, 1.0, xml->getDoubleAttribute ("lastAppliedPanWidth", 1.0));
+    globalAttackValue        = xml->getDoubleAttribute ("globalAttackValue",      0.0);
+    globalSustainValue       = xml->getDoubleAttribute ("globalSustainValue",     1.0);
+    lastAppliedSustainStartKey = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedSustainStartKey", 0));
+    lastAppliedSustainEndKey   = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedSustainEndKey",   87));
+    lastAppliedExpKSustain     = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKSustain",   0));
+    globalDecayValue         = xml->getDoubleAttribute ("globalDecayValue",       0.0001);
+    globalReleaseValue       = xml->getDoubleAttribute ("globalReleaseValue",     0.0001);
+    normalizationEnabled     = xml->getBoolAttribute   ("normalizationEnabled",   false);
+    taperCTEnabled           = xml->getBoolAttribute   ("taperCTEnabled",         false);
+    taperACTEnabled          = xml->getBoolAttribute   ("taperACTEnabled",        false);
+    lastAppliedAmpStartKey       = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedAmpStartKey",       0));
+    lastAppliedAmpEndKey         = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedAmpEndKey",         87));
+    lastAppliedKeyVolumeStartKey = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedKeyVolumeStartKey", 0));
+    lastAppliedKeyVolumeEndKey   = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedKeyVolumeEndKey",   87));
+    lastAppliedExpKKeyVolume     = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKKeyVolume",   4));
+    lastAppliedExpKAmp           = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKAmp",         4));
+    lastAppliedDecayIIThreshold  = juce::jlimit (0.0, 1.0, xml->getDoubleAttribute ("lastAppliedDecayIIThreshold", 0.0));
+    lastAppliedToggleA0          = juce::jlimit (1, 727, xml->getIntAttribute ("lastAppliedToggleA0", 1));
+    lastAppliedToggleC8          = juce::jlimit (1, 4,   xml->getIntAttribute ("lastAppliedToggleC8", 1));
+    lastAppliedExpKToggle        = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKToggle",      4));
+    lastAppliedExpKTuning1       = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKTuning1",     4));
+    lastAppliedExpKTuning2       = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKTuning2",     4));
+    lastAppliedExpKAttack        = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKAttack",      4));
+    lastAppliedExpKDecay1        = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKDecay1",      4));
+    lastAppliedExpKDecay2        = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKDecay2",      4));
+    lastAppliedExpKRelease       = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKRelease",     4));
+    lastAppliedExpKPhase         = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKPhase",       4));
+    lastAppliedExpKEvenMorph     = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKEvenMorph",   4));
+    lastAppliedEvenMorphStartKey = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedEvenMorphStartKey", 0));
+    lastAppliedEvenMorphEndKey   = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedEvenMorphEndKey",   87));
+    lastAppliedNToNSquaredStartKey = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedNToNSquaredStartKey", 0));
+    lastAppliedNToNSquaredEndKey   = juce::jlimit (0, 87, xml->getIntAttribute ("lastAppliedNToNSquaredEndKey",   87));
+    lastAppliedExpKNToNSquared     = juce::jlimit (-50, 50, xml->getIntAttribute ("lastAppliedExpKNToNSquared",   4));
+    lastAppliedAttackRand        = juce::jlimit (0.0, 1.0, xml->getDoubleAttribute ("lastAppliedAttackRand",       0.0));
+    lastAppliedPhaseRand         = juce::jlimit (0.0, 1.0, xml->getDoubleAttribute ("lastAppliedPhaseRand",        0.0));
+    lastAppliedReleaseRand       = juce::jlimit (0.0, 1.0, xml->getDoubleAttribute ("lastAppliedReleaseRand",      0.0));
+    lastAppliedAmpA0           = xml->getDoubleAttribute ("lastAppliedAmpA0",           0.0);
+    lastAppliedAmpC8           = xml->getDoubleAttribute ("lastAppliedAmpC8",           0.0);
+    lastAppliedKeyVolumeA0     = xml->getDoubleAttribute ("lastAppliedKeyVolumeA0",     1.0);
+    lastAppliedKeyVolumeC8     = xml->getDoubleAttribute ("lastAppliedKeyVolumeC8",     1.0);
+    lastAppliedEvenMorphA0     = xml->getDoubleAttribute ("lastAppliedEvenMorphA0",     0.0);
+    lastAppliedEvenMorphC8     = xml->getDoubleAttribute ("lastAppliedEvenMorphC8",     0.0);
+    lastAppliedStretchA0       = xml->getIntAttribute    ("lastAppliedStretchA0",       0);
+    lastAppliedStretchC8       = xml->getIntAttribute    ("lastAppliedStretchC8",       0);
+    lastAppliedInharmonicityA0 = xml->getDoubleAttribute ("lastAppliedInharmonicityA0", 0.0);
+    lastAppliedInharmonicityC8 = xml->getDoubleAttribute ("lastAppliedInharmonicityC8", 0.0);
+    lastAppliedPhaseA0         = xml->getIntAttribute    ("lastAppliedPhaseA0",         180);
+    lastAppliedPhaseC8         = xml->getIntAttribute    ("lastAppliedPhaseC8",         180);
+    lastAppliedAttackA0        = xml->getDoubleAttribute ("lastAppliedAttackA0",        0.0);
+    lastAppliedAttackC8        = xml->getDoubleAttribute ("lastAppliedAttackC8",        0.0);
+    lastAppliedDecayA0         = xml->getDoubleAttribute ("lastAppliedDecayA0",         0.5);
+    lastAppliedDecayC8         = xml->getDoubleAttribute ("lastAppliedDecayC8",         0.5);
+    lastAppliedSustainA0       = xml->getDoubleAttribute ("lastAppliedSustainA0",       1.0);
+    lastAppliedSustainC8       = xml->getDoubleAttribute ("lastAppliedSustainC8",       1.0);
+    lastAppliedReleaseA0       = xml->getDoubleAttribute ("lastAppliedReleaseA0",       0.0);
+    lastAppliedReleaseC8       = xml->getDoubleAttribute ("lastAppliedReleaseC8",       0.0);
 
-    // 2. Restore individual key volumes and tuning graph states
-    for (auto* childXml : xml->getChildIterator())
+    int keyIdx = 0;
+    for (auto* child : xml->getChildIterator())
+    {
+        if (child->getTagName() == "Key" && keyIdx < 88)
         {
-            if (childXml->getTagName() == "KeyState")
-            {
-                int key = childXml->getIntAttribute ("key");
-                if (key >= 0 && key < 88)
-                {
-                    keyVolume[key] = childXml->getDoubleAttribute ("keyVolume", 1.0);
-                    keyInharmonicityB[key] = juce::jlimit (-0.0015, 0.0015, childXml->getDoubleAttribute ("inharmonicityB", 0.0));
-                    keyDutyCycle[key]       = juce::jlimit (0.0, 0.5, childXml->getDoubleAttribute ("dutyCycle", 0.0));
-                    evenMorphStrength[key]  = juce::jlimit (0.0, 1.0, childXml->getDoubleAttribute ("evenMorphStrength", 1.0));
-                    
-                }
-            }
+            keyVolume[keyIdx]         = child->getDoubleAttribute ("kv",  1.0);
+            keyInharmonicityB[keyIdx] = child->getDoubleAttribute ("kb",  0.0);
+            keyDutyCycle[keyIdx]      = child->getDoubleAttribute ("kdc", 0.5);
+            evenMorphStrength[keyIdx] = child->getDoubleAttribute ("kem", 0.0);
+            ++keyIdx;
         }
+    }
 
-    // 3. Restore oscillator array parameters
-    for (auto* oscXml : xml->getChildIterator())
+    int oscIdx = 0;
+    for (auto* child : xml->getChildIterator())
     {
-        if (oscXml->getTagName() != "Oscillator")
-            continue;
-
-        int index = oscXml->getIntAttribute ("index");
-
-        if (index >= 0 && index < (int) oscillators.size())
+        if (child->getTagName() == "O" && oscIdx < (int) oscillators.size())
         {
-            oscillators[index].amplitude = (double) oscXml->getDoubleAttribute ("amplitude", 1.0);
-            oscillators[index].manuallyMuted = oscXml->getBoolAttribute ("manuallyMuted", false);
-            
-            
-            oscillators[index].stretchCents = oscXml->getIntAttribute ("stretchCents", 0);
-                        oscillators[index].inharmonicityCents = oscXml->getIntAttribute ("inharmonicityCents", 0);
-                        oscillators[index].recombineTuningCents();
-            
-            oscillators[index].startPhaseDegrees = oscXml->getIntAttribute ("startPhaseDegrees", 0);
-            oscillators[index].setStartPhaseDegrees = oscXml->getIntAttribute ("setStartPhaseDegrees", oscillators[index].startPhaseDegrees);
-            oscillators[index].startPhase = oscillators[index].startPhaseDegrees * (juce::MathConstants<double>::pi / 180.0);
-            oscillators[index].pan = oscXml->getDoubleAttribute ("pan", 0.0);
-            oscillators[index].attackTime    = oscXml->getDoubleAttribute ("attackTime", 0.0001);
-            oscillators[index].setAttackTime = oscillators[index].attackTime;
-            oscillators[index].decayTime = oscXml->getDoubleAttribute ("decayTime", 0.0001);
-            oscillators[index].decayShapeRatio = juce::jlimit (0.0, 1.0, oscXml->getDoubleAttribute ("decayShapeRatio", 1.0));
-            oscillators[index].sustainLevel = oscXml->getDoubleAttribute ("sustainLevel", 1.0);
-            oscillators[index].releaseTime    = oscXml->getDoubleAttribute ("releaseTime", 0.0001);
-            oscillators[index].setReleaseTime = oscillators[index].releaseTime;
-            oscillators[index].aboveCeiling = oscXml->getBoolAttribute ("aboveCeiling", false);
-            
-            // Force hardware registers to recalculate using restored settings
-            oscillators[index].needsFrequencyUpdate = true;
-            oscillators[index].needsPhaseUpdate = true;
-            oscillators[index].needsPanUpdate = true;
+            oscillators[oscIdx].amplitude          = child->getDoubleAttribute ("a",   1.0);
+            oscillators[oscIdx].manuallyMuted       = child->getBoolAttribute   ("m",   false);
+            oscillators[oscIdx].tuningCents         = child->getIntAttribute    ("tc",  0);
+            oscillators[oscIdx].stretchCents        = child->getIntAttribute    ("sc",  0);
+            oscillators[oscIdx].inharmonicityCents  = child->getIntAttribute    ("ic",  0);
+            oscillators[oscIdx].recombineTuningCents();
+            oscillators[oscIdx].startPhaseDegrees    = child->getIntAttribute   ("spd", 0);
+            oscillators[oscIdx].setStartPhaseDegrees = child->getIntAttribute   ("sspd",0);
+            oscillators[oscIdx].startPhase = oscillators[oscIdx].startPhaseDegrees * (juce::MathConstants<double>::pi / 180.0);
+            oscillators[oscIdx].pan              = child->getDoubleAttribute ("pan", 0.0);
+            oscillators[oscIdx].attackTime       = child->getDoubleAttribute ("at",  0.0);
+            oscillators[oscIdx].setAttackTime    = oscillators[oscIdx].attackTime;
+            oscillators[oscIdx].decayTime        = child->getDoubleAttribute ("dt",  0.5);
+            oscillators[oscIdx].decayShapeRatio  = child->getDoubleAttribute ("dsr", 1.0);
+            oscillators[oscIdx].sustainLevel     = child->getDoubleAttribute ("sl",  1.0);
+            oscillators[oscIdx].releaseTime      = child->getDoubleAttribute ("rt",  0.0);
+            oscillators[oscIdx].setReleaseTime   = oscillators[oscIdx].releaseTime;
+            oscillators[oscIdx].aboveCeiling     = child->getBoolAttribute   ("ac",  false);
+            oscillators[oscIdx].needsFrequencyUpdate = true;
+            oscillators[oscIdx].needsPhaseUpdate     = true;
+            oscillators[oscIdx].needsPanUpdate       = true;
+            ++oscIdx;
         }
     }
 
@@ -657,18 +749,15 @@ void SineLabAudioProcessor::updateActiveRanks()
 
         int activeCount = 0;
         for (int h = 0; h < count; ++h)
-        {
-            auto& osc = oscillators[startIndex + h];
-            if (! osc.manuallyMuted && ! osc.aboveCeiling)
+            if (oscillators[startIndex + h].isAudible())
                 ++activeCount;
-        }
 
         int activeRank = 0;
         for (int h = 0; h < count; ++h)
         {
             auto& osc = oscillators[startIndex + h];
             osc.activeCount = activeCount;
-            if (! osc.manuallyMuted && ! osc.aboveCeiling)
+            if (osc.isAudible())
                 osc.activeRank = activeRank++;
             else
                 osc.activeRank = 0;

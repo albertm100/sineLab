@@ -7,6 +7,36 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 //==============================================================================
+class ScalingToggleLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    ScalingToggleLookAndFeel() = default;
+
+    void drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
+                           bool isMouseOverButton, bool isButtonDown) override
+    {
+        auto bounds = button.getLocalBounds().toFloat();
+        float tickSize = bounds.getHeight() * 0.6f;
+        float tickX = 2.0f;
+        float tickY = (bounds.getHeight() - tickSize) / 2.0f;
+
+        // Draw the default tick box style using the parent LookAndFeel, but scaled to tickSize
+        drawTickBox (g, button, tickX, tickY, tickSize, tickSize,
+                     button.getToggleState(), button.isEnabled(),
+                     isMouseOverButton, isButtonDown);
+
+        juce::String text = button.getButtonText();
+        if (text.isNotEmpty())
+        {
+            float textX = tickX + tickSize + 6.0f;
+            float textW = bounds.getWidth() - textX;
+            g.setColour (button.findColour (juce::ToggleButton::textColourId));
+            g.setFont (bounds.getHeight() * 0.5f);
+            g.drawText (text, textX, 0.0f, textW, bounds.getHeight(), juce::Justification::centredLeft);
+        }
+    }
+};
+
 class ThinSliderLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -89,6 +119,8 @@ public:
     void resized() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void paintToggleGraph (juce::Graphics& g, int componentWidth, int componentHeight);
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
+    void mouseDown (const juce::MouseEvent& e) override;
 
 
 private:
@@ -108,6 +140,7 @@ private:
     ThinSliderLookAndFeel ampSubTabSliderLookAndFeel;
     ThinSliderLookAndFeel tuningSubTabSliderLookAndFeel;
     ThinSliderLookAndFeel decaySubTabSliderLookAndFeel;
+    ScalingToggleLookAndFeel scalingToggleLookAndFeel;
     juce::OwnedArray<InvisibleKeyButton> keyButtons;
     int selectedKey = -1;
     int hoveredKey = -1;
@@ -119,6 +152,18 @@ private:
     void keyClicked (int noteIndex);
     void tabSelected (int tabIndex);
     void rebuildSlidersForActiveTab();
+
+    // Scoped repaints — identical pixels, but only the region that actually
+    // changed gets redrawn instead of the whole window
+    void repaintGraphArea();
+    void repaintKeyboard();
+
+    // Which key each per-harmonic slider set was built for. When a rebuild is
+    // requested for the same key, values are updated in place instead of
+    // destroying and recreating up to 727 slider objects.
+    int amplitudeBuiltKey = -1, tuningBuiltKey = -1, phaseBuiltKey = -1,
+        panBuiltKey = -1, attackBuiltKey = -1, decayBuiltKey = -1,
+        sustainBuiltKey = -1, releaseBuiltKey = -1;
     
     void updateControlVisibility();
     
@@ -174,7 +219,8 @@ private:
     juce::TextEditor ampC8UpperTextBox;
     juce::TextEditor evenMorphA0UpperTextBox;
     juce::TextEditor evenMorphC8UpperTextBox;
-
+    juce::TextEditor evenMorphA0CenterTextBox;
+    juce::TextEditor evenMorphC8CenterTextBox;
     juce::ToggleButton normalizationCheckbox;
     void normalizationToggled();
 
@@ -183,18 +229,16 @@ private:
     void taperCTToggled();
     void taperACTToggled();
     void recalculateKeyVolume (int key);
+    double calculateRawKeyPeak (int key);
     void recalculateAllKeyVolumes();
     void reapplyDecayShapeForKey (int key);
     
-    juce::TextButton applyOneOverSqrtNButton;
-    void applyOneOverSqrtNClicked();
 
-    juce::TextButton applyOneOverNButton;
-    void applyOneOverNClicked();
+    juce::TextButton applyNToXButton;
+    juce::TextEditor nToXTextBox;
+    void applyNToXClicked();
 
-    juce::TextButton applyOneOverNSquaredButton;
-        void applyOneOverNSquaredClicked();
-    
+
 
     InvisibleKeyButton tuningTabButton;
     juce::Viewport tuningViewport;
@@ -283,6 +327,16 @@ private:
 
     ScrollableTextEditor globalAmpTextBox;
     void globalAmpApplied();
+    juce::ComboBox   presetBrowserComboBox;
+    juce::TextButton savePresetButton;
+    juce::TextButton deletePresetButton;
+    juce::TextButton prevPresetButton;
+    juce::TextButton nextPresetButton;
+    juce::File getPresetsFolder();
+    void refreshPresetList();
+    void savePreset();
+    void loadPreset (int comboBoxId);
+    void deletePreset();
     ScrollableTextEditor globalTuningTextBox;
     void globalTuningApplied();
     
@@ -308,6 +362,12 @@ private:
     
     juce::TextButton expShapeButton;
     ScrollableTextEditor expSteepnessTextBox;
+    juce::TextButton evenMorphLinearCenterButton;
+    juce::TextButton evenMorphCubicCenterButton;
+    juce::TextButton evenMorphSquaredCenterButton;
+    juce::TextButton evenMorphAbsValueCenterButton;
+    juce::TextButton evenMorphExpCenterButton;
+    juce::TextEditor evenMorphExpSteepnessCenterTextBox;
     
         void expSteepnessApplied();
     
@@ -317,6 +377,7 @@ private:
         void applyShapeToAmp (std::function<double(double)> shapeFunction);
         void applyShapeToKeyVolume (std::function<double(double)> shapeFunction);
         void applyShapeToEvenMorph (std::function<double(double)> shapeFunction);
+        void applyShapeToNToNSquared (std::function<double(double)> shapeFunction);
         void applyShapeToStretch (std::function<double(double)> shapeFunction);
         void applyShapeToInharmonicity (std::function<double(double)> shapeFunction);
         void applyShapeToPhase (std::function<double(double)> shapeFunction);
@@ -350,6 +411,8 @@ private:
     void oddLeftEvenRightClicked();
     juce::TextButton alternateActiveButton;
         void alternateActiveClicked();
+    juce::TextButton smartPanButton;
+    void smartPanClicked();
     ScrollableTextEditor globalAttackTextBox;
     void globalAttackApplied();
     juce::TextEditor attackRandTextBox;

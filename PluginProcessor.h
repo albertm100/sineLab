@@ -23,7 +23,6 @@ struct OscillatorState
     int inharmonicityCents = 0;
     void recombineTuningCents() { tuningCents = stretchCents + inharmonicityCents; }
 
-    int maxUpwardCents = 0;
     int maxDownwardCents = 0;
     int audibleMaxCents = 0;
     int midiNoteNumber = 0;
@@ -56,6 +55,19 @@ struct OscillatorState
 
     int activeRank  = 0;
     int activeCount = 1;
+
+    // The single audibility rule shared by the engine, taper ranking,
+    // normalization, toggle grid and LR button. Envelope times of 0 mean
+    // "instantaneous", never "off" — only these conditions silence a harmonic.
+    bool isAudible() const
+    {
+        return ! manuallyMuted
+            && ! aboveCeiling
+            && tuningCents < audibleMaxCents
+            && tuningCents > maxDownwardCents
+            && amplitude > 1e-5
+            && ! (decayTime == 0.0f && sustainLevel == 0.0f);
+    }
 };
 
 //==============================================================================
@@ -99,46 +111,31 @@ public:
     std::vector<int> harmonicCounts;
     std::vector<int> keyStartIndex;
     std::vector<double> keyVolume;
+    bool keySounding[88] = {};
     std::vector<double> keyDutyCycle;
     
     
-    int lastAppliedStretchA0 = 0;
-    int lastAppliedStretchC8 = 0;
-
-    double lastAppliedAmpA0 = 0.25;
-    double lastAppliedAmpC8 = 0.25;
     int lastAppliedAmpStartKey = 0;
     int lastAppliedAmpEndKey = 87;
 
-    double lastAppliedKeyVolumeA0  = 1.0;
-    double lastAppliedKeyVolumeC8  = 1.0;
     int    lastAppliedKeyVolumeStartKey = 0;
     int    lastAppliedKeyVolumeEndKey   = 87;
     int    lastAppliedExpKKeyVolume     = 4;
-    double globalKeyVolumeValue         = 1.0;
     int    lastAppliedExpKEvenMorph      = 4;
     int    lastAppliedEvenMorphStartKey  = 0;
     int    lastAppliedEvenMorphEndKey    = 87;
-    double lastAppliedEvenMorphA0        = 1.0;
-    double lastAppliedEvenMorphC8        = 0.0;
+    int    lastAppliedNToNSquaredStartKey = 0;
+    int    lastAppliedNToNSquaredEndKey   = 87;
+    int    lastAppliedExpKNToNSquared     = 4;
     double evenMorphStrength[88]         = {};
 
-    double lastAppliedAttackA0 = 0.0001;
-    double lastAppliedAttackC8 = 0.0001;
-    double lastAppliedAttackRand = 0.0;
-    double lastAppliedReleaseRand = 0.0;
-    double lastAppliedDecayA0 = 0.0;
-    double lastAppliedDecayC8 = 0.0;
     double lastAppliedDecayIIThreshold = 0.0;
-    double lastAppliedReleaseA0 = 0.0;
-    double lastAppliedReleaseC8 = 0.0;
+    double lastAppliedAttackRand       = 0.0;
+    double lastAppliedPhaseRand        = 0.0;
+    double lastAppliedReleaseRand      = 0.0;
 
-    int lastAppliedToggleA0 = 1;
-    int lastAppliedToggleC8 = 1;
-    int lastAppliedPhaseA0 = 1;
-    int lastAppliedPhaseC8 = 1;
-    double lastAppliedPhaseRand = 0.0;
-    int lastAppliedPhaseEvens = 1;
+    int lastAppliedToggleA0  = 1;
+    int lastAppliedToggleC8  = 1;
     int lastAppliedExpKToggle = 4;
     int lastAppliedExpKAmp = 4;
     int lastAppliedExpKTuning1 = 4;
@@ -148,10 +145,8 @@ public:
     int lastAppliedExpKDecay2 = 4;
     int lastAppliedExpKRelease = 4;
     int lastAppliedExpKPhase = 4;
-    
-    double lastAppliedInharmonicityA0 = 0.0;
-            double lastAppliedInharmonicityC8 = 0.0;
-        std::vector<double> keyInharmonicityB;
+
+    std::vector<double> keyInharmonicityB;
     
     
     
@@ -176,13 +171,32 @@ public:
     double globalAttackValue = 0.0;
     double globalSustainValue = 1.0;
     int    lastAppliedSustainStartKey = 0;
-    double lastAppliedSustainA0       = 1.0;
     int    lastAppliedSustainEndKey   = 87;
-    double lastAppliedSustainC8       = 1.0;
     int    lastAppliedExpKSustain     = 0;
     double globalDecayValue = 0.0001;
     double globalReleaseValue = 0.0001;
-    
+
+    double lastAppliedAmpA0          = 0.0;
+    double lastAppliedAmpC8          = 0.0;
+    double lastAppliedKeyVolumeA0    = 1.0;
+    double lastAppliedKeyVolumeC8    = 1.0;
+    double lastAppliedEvenMorphA0    = 0.0;
+    double lastAppliedEvenMorphC8    = 0.0;
+    int    lastAppliedStretchA0      = 0;
+    int    lastAppliedStretchC8      = 0;
+    double lastAppliedInharmonicityA0 = 0.0;
+    double lastAppliedInharmonicityC8 = 0.0;
+    int    lastAppliedPhaseA0        = 180;
+    int    lastAppliedPhaseC8        = 180;
+    double lastAppliedAttackA0       = 0.0;
+    double lastAppliedAttackC8       = 0.0;
+    double lastAppliedDecayA0        = 0.5;
+    double lastAppliedDecayC8        = 0.5;
+    double lastAppliedSustainA0      = 1.0;
+    double lastAppliedSustainC8      = 1.0;
+    double lastAppliedReleaseA0      = 0.0;
+    double lastAppliedReleaseC8      = 0.0;
+
 private:
     double currentSampleRate = 44100.0;
 
