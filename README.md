@@ -1,8 +1,8 @@
 # sineLab
-sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE and Claude. Hear a demo of sineLab here: https://youtu.be/7iIjeCGsYqM?si=Okd8r05ycU0CrXMJ
+sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE, Claude Sonnet 4.6, and Gemini 3.5 Flash (Low). Hear a demo of sineLab here: https://youtu.be/7iIjeCGsYqM?si=Okd8r05ycU0CrXMJ
 
 *Note
-sineLab has only been tested using macOS. sineLab is also quite computationally heavy, but this is directly proportional to how many oscillators an active MIDI key has. Further, collapsing the DAW's plugin window for some reason obstructs the PAN and ATTACK tabs. Thus, leaving the window fully expanded results in no obstruction. ALWAYS use a limiter on the master track of your DAW BEFORE working with sineLab.
+sineLab has only been tested using macOS. sineLab is also quite computationally heavy, but this is directly proportional to how many oscillators an active MIDI key has. Further, collapsing the DAW's plugin window for some reason obstructs the PAN and ATTACK tabs. Thus, leaving the window fully expanded results in no obstruction. ALWAYS use a limiter on the master track of your DAW BEFORE working with sineLab. The DAW also takes time to save when sineLab is active, so I try not to quit too fast after pressing save!
 
 sineLab is short for sine wave laboratory. There are 88 MIDI keys, ranging from A0 to C8, all with a specific number of sine wave oscillators allocated to them. The formula for determining the number of sine wave oscillators for a specific key between A0 and C8 is 20000/fundamental, or 20000 Hz, divided by the fundamental frequency of each MIDI key between A0 and C8, assuming equal temperament. A0 has 727 sine wave oscillators, while C8 has only 4. 
 
@@ -17,22 +17,24 @@ sineLab by default opens in global mode. Thus, when NO key is selected at the bo
 TOGGLE
 Toggle tab shows the currently active harmonics. The upper left box represents the amount of active harmonics for A0, and the right represents the amount of harmonics for C8. The horizontal axis of the global toggle tab represents MIDI keys from A0 to C8. The vertical axis represents the number of harmonics per key. The bottom row is the 1st harmonic for every key, the 2nd is the second, and so on. The graph is simply a way to visually see which harmonics are currently ON. 
 
+The preset browser appears only in the global toggle tab. It allows you to save and delete presets.
+
 1. The 1, 3, and e buttons simply represent linear, cubic, or exponential interpolation. THe steepness of e ranges from +-50.
 2. The textbox with a 3 and a toggle adjacent to it allows one to enter in an integer from 3 to 727. This number will toggle all harmonics whose number is a multiple of what is in the box. Thus, 3 means toggle off the 3rd, 6th, 9th, 12th, 15th, etc. harmonics. 
 3. Primes toggle toggles on or off the prime-numbered harmonics. Thus, 2, 3, 5, 7, 11, 13, 17, 23, 29, etc. are toggled. 
 4. Evens toggle toggles on or off the even-numbered harmonics. 2, 4, 6, 8, etc. 
 5. 1st Harm toggles on or off the 1st harmonic, or fundamental of every key. 
 6. The blank checkbox represents toggling ALL harmonics on or off.
-<img width="1581" height="1242" alt="F57F9907-C746-4C09-A4D3-F391A7D74C31_1_201_a" src="https://github.com/user-attachments/assets/7d839abf-eda9-44b7-b07a-729ab7634bc1" />
+<img width="796" height="626" alt="Screenshot 2026-08-01 at 5 19 17 PM" src="https://github.com/user-attachments/assets/64b31783-ce7f-465d-bb89-cd207cbf9a4c" />
 
 
 
 AMP
 The top left black box represents the MIDI number, thus 1 represents A0, 88 represents C8. There are also blue numbers on every key at the bottom representing the number of that key. If this number is anything greater than 1, all keys with a number less than it will get an identical Duty Cycle value. The black box immediately to the right of this smaller black box represents the value of the duty cycle for the key denoted by the number in the smaller left box, and all keys to the left of it. For the 2 blue boxes to the right, the behavior is identical, except all the keys GREATER than the number in the left blue box get identical values. The Duty Cycle tab will approximate a pulse wave with variable duty cycle using the following formula: |4 / (kπ)sin(kπd)|. Only the amplitudes are used for this formula.
 
-The 1, 2, 3, ||, e buttons are buttons that allow one to interpolate the duty cycle between the chosen endpoints. 2 and || will result in a parabola and the "v" shaped function respectively.
-1/[n*n] button sets the amplitudes of every harmonic to be 1 divided by it's harmonic number squared. Thus the first harmonic gets 1 amplitude, the second gets 1/4, third gets 1/9, etc. 
-  1/n button sets the amplitudes of every harmonic to be 1 divided by harmonic number. Thus the first harmonic gets 1 amplitude, the second gets 1/2, third gets 1/2, etc.
+The 1, 2, 3, ||, e buttons are buttons that allow one to interpolate the duty cycle between the chosen endpoints. 2 and || will result in a parabola and the "v" shaped function respectively. 
+
+INTEGRAL means taking UP to the first integral of the pulse wave set in every key. All this means is when the value in the INTEGRAL box is 0.00, no integration has occurred, and thus a square wave is a square wave, or the harmonics decay at 1/n, with no evens for example. If the value in the INTEGRAL box is 1.00, then a square wave becomes a triangle wave, or 1/(n*n). However, 1/(n^2) may be too dark for certain instances. And thus, one can take the integral at, say, 0.25, which provides a slightly darker sound. Note that this only applies to the DUTY CYCLE tab. Support for the other tabs has not been implemented yet. 
 
 TAPER ACT is a toggle in the global AMP tab that multiplies (k - n + 1)/k to every CURRENTLY ACTIVE harmonic of every key. Where k is the active harmonic count for that key, n is the harmonic number. 
   TAPER CT is a toggle in the global AMP tab that multiplies (k - n + 1)/k to every harmonic of every key. Where k is the total harmonic count for that key, n is the harmonic number. It smooths out the Gibbs phenomena, and does "darken" the tone of classic waveforms.
@@ -42,13 +44,18 @@ NORM toggle normalizes the volume OF AN ENTIRE KEY, based on the root mean squar
 The box under norm allows one to apply a single amplitude value to every harmonic.
 
 The Duty Cycle tab is the same as tab "1". 
-<img width="1590" height="1253" alt="DF2AC564-4012-44A6-9269-EBE037C75B5E_1_201_a" src="https://github.com/user-attachments/assets/7bb8c182-5c92-4087-818c-038bc1bc2f99" />
+<img width="795" height="626" alt="Screenshot 2026-08-01 at 5 19 20 PM" src="https://github.com/user-attachments/assets/7ffb71ee-c900-482d-94ea-fa7f0312e688" />
+
+
 
 Tab "2" represents the amplitude slider for every key, and thus if one desires a different balance between keys, one can interpolate between keys in tab 2. The upper 2 buttons and text boxes work the same; choose 2 keys as endpoints, and interpolate between them if desired. 
   The graph has the horizontal axis to be the MIDI number, and the vertical axis represents the duty cycle from 0 to 50% assuming one wants to interpolate the duty cycle of a pulse wave between the endpoints.
 <img width="1592" height="1252" alt="420F0D33-4B80-43C3-8AC6-A5D255AB25C9_1_201_a" src="https://github.com/user-attachments/assets/05d3b468-38cb-4fb7-ba6f-5e773199ef34" />
   
-Tab 3 allows one to "morph" between a sawtooth wave and a square wave by adjusting the strength of the even harmonics. <img width="1594" height="1251" alt="80F20610-7326-4275-984D-898E75C9EF11_1_201_a" src="https://github.com/user-attachments/assets/c24b0e0b-7b73-4f43-9c2b-1cc076f51b29" />
+Tab 3 allows one to "morph" between a sawtooth wave and a square wave by adjusting the strength of the even harmonics. The left is assumed to be a sawtooth wave, and the right square. As in A0 = sawtooth, C8 = square. Or, 1/n across all keys, except starting from left to right, the evens get quieter until eventually reaching a square wave, or a sawtooth with all the even harmonics at 0 amplitude, or a sawtooth wave with all the even harmonics turned OFF.
+<img width="795" height="625" alt="Screenshot 2026-08-01 at 5 49 13 PM" src="https://github.com/user-attachments/assets/fafaf6a3-2617-4d1d-995e-a6b1565015ee" />
+
+
 
 TUNE
 STRETCH's boxes behave similarly to AMP's; Left text box represents A0. Right, C8. What happens in stretch is one cent deviation value is applied to every harmonic of that key. Meaning if I type in 50 in the left box, +50 cents will be applied to every harmonic in A0. The graph only shows and allows +-50 cents for stretch. STRETCH does not affect INHARMONICITY.
@@ -86,5 +93,3 @@ The bottom right box sets one sustain value to every harmonic. Ranges from 0.000
 
 RELEASE
 Top left box represent's the release value for all of A0's harmonics, right for C8. Same buttons. RAND box works identically for release as it does for the rest of the tabs. 
-
-State is saved, but sineLab features no preset browser. The default preset features of most major DAWs is assumed to be used. 
