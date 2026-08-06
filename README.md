@@ -1,5 +1,5 @@
 # sineLab
-sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE, Claude Sonnet 4.6, and Gemini 3.5 Flash (Low). Hear a demo of sineLab here: https://youtu.be/7iIjeCGsYqM?si=Okd8r05ycU0CrXMJ
+sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE, Claude Sonnet 4.6, and Gemini 3.6 Flash (Low). Hear a demo of sineLab here: https://youtu.be/7iIjeCGsYqM?si=Okd8r05ycU0CrXMJ
 
 *Note
 sineLab has only been tested using macOS. sineLab is also quite computationally heavy, but this is directly proportional to how many oscillators an active MIDI key has. Further, collapsing the DAW's plugin window for some reason obstructs the PAN and ATTACK tabs. Thus, leaving the window fully expanded results in no obstruction. ALWAYS use a limiter on the master track of your DAW BEFORE working with sineLab. The DAW also takes time to save when sineLab is active, so I try not to quit too fast after pressing save!
@@ -36,8 +36,10 @@ The 1, 2, 3, ||, e buttons are buttons that allow one to interpolate the duty cy
 
 INTEGRAL means taking UP to the first integral of the pulse wave set in every key. All this means is when the value in the INTEGRAL box is 0.00, no integration has occurred, and thus a square wave is a square wave, or the harmonics decay at 1/n, with no evens for example. If the value in the INTEGRAL box is 1.00, then a square wave becomes a triangle wave, or 1/(n*n). However, 1/(n^2) may be too dark for certain instances. And thus, one can take the integral at, say, 0.25, which provides a slightly darker sound. Note that this only applies to the DUTY CYCLE tab. Support for the other tabs has not been implemented yet. 
 
+n^x button should work as follows: The value in the text box represents the power of n. This value ranges from 0.00 to 1.00. Inputting 1.00, then pressing the button causes all harmonics to follow the attenuation 1/(n^1), or 1/n, which if all harmonics are toggled on, will result in a saw-tooth wave, or a bright simple timbre. Meaning the 1st harmonic gets unity amplitude, the second gets half the amplitude of the 1st, the 3rd gets 1/3 of the amplitude, the 4th 1/4, etc. 
+
 TAPER ACT is a toggle in the global AMP tab that multiplies (k - n + 1)/k to every CURRENTLY ACTIVE harmonic of every key. Where k is the active harmonic count for that key, n is the harmonic number. 
-  TAPER CT is a toggle in the global AMP tab that multiplies (k - n + 1)/k to every harmonic of every key. Where k is the total harmonic count for that key, n is the harmonic number. It smooths out the Gibbs phenomena, and does "darken" the tone of classic waveforms.
+TAPER CT is a toggle in the global AMP tab that multiplies (k - n + 1)/k to every harmonic of every key. Where k is the total harmonic count for that key, n is the harmonic number. Both taper toggles smooth out the Gibbs phenomena, and does "darken" the tone of classic waveforms.
 
 NORM toggle normalizes the volume OF AN ENTIRE KEY, based on the root mean square of the sum of the amplitudes of every harmonic for that key, then the result multiplied times 0.5. Thus any change made to the toggle or amplitude tab affects the normalization when toggled on. 
 
