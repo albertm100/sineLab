@@ -238,6 +238,10 @@ private:
     juce::TextEditor nToXTextBox;
     void applyNToXClicked();
 
+    juce::TextEditor integralTextBox;
+    juce::Label      integralLabel;
+    void             integralApplied();
+
 
 
     InvisibleKeyButton tuningTabButton;

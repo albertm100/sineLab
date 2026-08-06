@@ -587,6 +587,7 @@ void SineLabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     root.setAttribute ("lastAppliedSustainC8",       lastAppliedSustainC8);
     root.setAttribute ("lastAppliedReleaseA0",       lastAppliedReleaseA0);
     root.setAttribute ("lastAppliedReleaseC8",       lastAppliedReleaseC8);
+    root.setAttribute ("lastAppliedIntegralValue",   lastAppliedIntegralValue);
 
     for (int key = 0; key < 88; ++key)
     {
@@ -692,6 +693,7 @@ void SineLabAudioProcessor::setStateInformation (const void* data, int sizeInByt
     lastAppliedSustainC8       = xml->getDoubleAttribute ("lastAppliedSustainC8",       1.0);
     lastAppliedReleaseA0       = xml->getDoubleAttribute ("lastAppliedReleaseA0",       0.0);
     lastAppliedReleaseC8       = xml->getDoubleAttribute ("lastAppliedReleaseC8",       0.0);
+    lastAppliedIntegralValue   = juce::jlimit (0.0, 1.0, xml->getDoubleAttribute ("lastAppliedIntegralValue", 0.0));
 
     int keyIdx = 0;
     for (auto* child : xml->getChildIterator())

@@ -6,7 +6,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-static void applyPulseWaveToKey (SineLabAudioProcessor&, int, double);
+static void applyPulseWaveToKey (SineLabAudioProcessor&, int, double, double = 0.0);
 static bool isPrime (int n);
 
 
@@ -320,6 +320,27 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
     };
     nToXTextBox.setVisible (false);
 
+    addAndMakeVisible (integralTextBox);
+    integralTextBox.setJustification (juce::Justification::centred);
+    integralTextBox.setColour (juce::TextEditor::textColourId, juce::Colours::black);
+    integralTextBox.setColour (juce::TextEditor::backgroundColourId, juce::Colours::white);
+    integralTextBox.setColour (juce::TextEditor::outlineColourId, juce::Colours::black);
+    integralTextBox.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::black);
+    integralTextBox.setInputRestrictions (4, "0123456789.");
+    integralTextBox.setText ("0.00", juce::dontSendNotification);
+    integralTextBox.onReturnKey = [this]
+    {
+        integralApplied();
+        unfocusAllComponents();
+    };
+    integralTextBox.onFocusLost = [this] { integralApplied(); };
+    integralTextBox.setVisible (false);
+
+    addAndMakeVisible (integralLabel);
+    integralLabel.setText ("INTEGRAL", juce::dontSendNotification);
+    integralLabel.setJustificationType (juce::Justification::centredLeft);
+    integralLabel.setColour (juce::Label::textColourId, juce::Colours::black);
+    integralLabel.setVisible (false);
 
 
     addAndMakeVisible (evenLeftOddRightButton);
@@ -1308,7 +1329,7 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
     phaseEvensTextBox.setVisible (false);
 
     addAndMakeVisible (phaseEvensLabel);
-    phaseEvensLabel.setText ("EVENS", juce::dontSendNotification);
+    phaseEvensLabel.setText ("EVENS PHASE", juce::dontSendNotification);
     phaseEvensLabel.setJustificationType (juce::Justification::centredRight);
     phaseEvensLabel.setColour (juce::Label::textColourId, juce::Colours::black);
     phaseEvensLabel.setVisible (false);
@@ -1523,6 +1544,7 @@ SineLabAudioProcessorEditor::SineLabAudioProcessorEditor (SineLabAudioProcessor&
         attackRandTextBox.setText (juce::String (audioProcessor.lastAppliedAttackRand, 2), juce::dontSendNotification);
         releaseRandTextBox.setText(juce::String (audioProcessor.lastAppliedReleaseRand, 2), juce::dontSendNotification);
         panWidthTextBox.setText (juce::String (audioProcessor.lastAppliedPanWidth, 4), juce::dontSendNotification);
+        integralTextBox.setText (juce::String (audioProcessor.lastAppliedIntegralValue, 2), juce::dontSendNotification);
         expSteepnessTextBox.setText (juce::String (audioProcessor.lastAppliedExpKToggle), juce::dontSendNotification);
     }
 
@@ -1844,7 +1866,7 @@ void SineLabAudioProcessorEditor::paint (juce::Graphics& g)
                 {
                     g.setColour (juce::Colours::black);
                     g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 14.0f * (float)scale, juce::Font::plain));
-                    g.drawText ("EVENS", contextAreaLeftEdge, (int) topLineY, contextAreaWidth, 25, juce::Justification::centred, false);
+                    g.drawText ("STRENGTH OF EVENS", contextAreaLeftEdge, (int) topLineY, contextAreaWidth, 25, juce::Justification::centred, false);
                     paintEvenMorphGraph (g);
                     
                     int contentAreaTop = (int) (bounds.getHeight() / 16.0f) + 30;
@@ -1957,8 +1979,8 @@ void SineLabAudioProcessorEditor::resized()
     normalizationCheckbox.setBounds (bounds.getWidth() - (int)(30 * scale), contentAreaBottom - (int)(65 * scale), (int)(30 * scale), (int)(30 * scale));
     taperCTCheckbox.setBounds  ((bounds.getWidth() * 3) / 4 + (bounds.getWidth() / 4) / 4 - (int)(50 * scale), contentAreaBottom - (int)(65 * scale),  (int)(100 * scale), (int)(30 * scale));
     taperACTCheckbox.setBounds ((bounds.getWidth() * 3) / 4 + (bounds.getWidth() / 4) / 4 - (int)(50 * scale), contentAreaBottom - (int)(95 * scale),  (int)(100 * scale), (int)(30 * scale));
-    nToXTextBox.setBounds (bounds.getWidth() - (int)(80 * scale), contentAreaBottom - (int)(125 * scale), (int)(35 * scale), (int)(30 * scale));
-    applyNToXButton.setBounds (bounds.getWidth() - (int)(40 * scale), contentAreaBottom - (int)(125 * scale), (int)(40 * scale), (int)(30 * scale));
+    nToXTextBox.setBounds (bounds.getWidth() - (int)(80 * scale), contentAreaBottom - (int)(95 * scale), (int)(35 * scale), (int)(30 * scale));
+    applyNToXButton.setBounds (bounds.getWidth() - (int)(40 * scale), contentAreaBottom - (int)(95 * scale), (int)(40 * scale), (int)(30 * scale));
     tuningTabButton.setBounds ((int) (2 * tabWidth), 0, (int) tabWidth, (int) topLineY);
         globalTuningTextBox.setBounds (bounds.getWidth() - (int)(80 * scale), contentAreaBottom - (int)(35 * scale), (int)(80 * scale), (int)(30 * scale));
 
@@ -2028,6 +2050,8 @@ void SineLabAudioProcessorEditor::resized()
         absValueShapeButton.setBounds (shapeRowRight, contentAreaTop + (int)(35 * scale), (int)(30 * scale), (int)(30 * scale));
         expShapeButton.setBounds (shapeRowLeft, contentAreaTop + (int)(70 * scale), (int)(30 * scale), (int)(30 * scale));
         expSteepnessTextBox.setBounds (shapeRowLeft + shapeRowSpan / 3, contentAreaTop + (int)(70 * scale), (int)(30 * scale), (int)(30 * scale));
+        integralTextBox.setBounds (shapeRowLeft, contentAreaTop + (int)(105 * scale), (int)(60 * scale), (int)(30 * scale));
+        integralLabel.setBounds (shapeRowLeft + (int)(65 * scale), contentAreaTop + (int)(105 * scale), (int)(80 * scale), (int)(30 * scale));
 
         evenMorphLinearCenterButton.setBounds   (shapeRowLeft, contentAreaCenterY + (int)(20 * scale), (int)(30 * scale), (int)(30 * scale));
         evenMorphSquaredCenterButton.setBounds  (shapeRowLeft + shapeRowSpan / 3, contentAreaCenterY + (int)(20 * scale), (int)(30 * scale), (int)(30 * scale));
@@ -2310,6 +2334,8 @@ void SineLabAudioProcessorEditor::updateControlVisibility()
     nextPresetButton.setVisible      (selectedKey == -1 && activeTab == 0);
     applyNToXButton.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
     nToXTextBox.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
+    integralTextBox.setVisible (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
+    integralLabel.setVisible   (selectedKey == -1 && activeTab == 1 && activeAmpSubTab == 1);
 
     tuningViewport.setVisible (selectedKey != -1 && activeTab == 2);
         globalTuningTextBox.setVisible (selectedKey == -1 && activeTab == 2);
@@ -2427,13 +2453,13 @@ void SineLabAudioProcessorEditor::rebuildToggleButtons()
         button->onClick = [this, harmonicIndex] { toggleButtonChanged (harmonicIndex); };
 
         auto& thisOsc = audioProcessor.oscillators[startIndex + h];
-                        bool isOn = ! thisOsc.manuallyMuted;
-                        button->setToggleState (isOn, juce::dontSendNotification);
+        bool isOn = thisOsc.isAudible();
+        button->setToggleState (isOn, juce::dontSendNotification);
 
         bool outOfRange  = (thisOsc.tuningCents >= thisOsc.audibleMaxCents || thisOsc.tuningCents <= thisOsc.maxDownwardCents);
-        bool ampOff      = (thisOsc.amplitude == 0.0);
+        bool ampOff      = (thisOsc.amplitude <= 1e-5);
         bool decayOff    = (thisOsc.decayTime == 0.0f && thisOsc.sustainLevel == 0.0f);
-        bool isSilent    = outOfRange || ampOff || decayOff || thisOsc.aboveCeiling;
+        bool isSilent    = outOfRange || ampOff || decayOff || thisOsc.aboveCeiling || thisOsc.manuallyMuted;
         auto indicatorColour = isSilent ? juce::Colours::lightgrey : juce::Colours::black;
         button->setColour (juce::ToggleButton::tickColourId,         indicatorColour);
         button->setColour (juce::ToggleButton::tickDisabledColourId, indicatorColour);
@@ -2837,7 +2863,7 @@ void SineLabAudioProcessorEditor::globalAmpApplied()
     globalAmpTextBox.giveAwayKeyboardFocus();
 }
 
-static void applyPulseWaveToKey (SineLabAudioProcessor& ap, int key, double dutyCycle)
+static void applyPulseWaveToKey (SineLabAudioProcessor& ap, int key, double dutyCycle, double alpha)
 {
     ap.keyDutyCycle[key] = dutyCycle;
 
@@ -2854,9 +2880,12 @@ static void applyPulseWaveToKey (SineLabAudioProcessor& ap, int key, double duty
     double maxAmp = 0.0;
     for (int h = 0; h < count; ++h)
     {
-        int k = h + 1;
-        double raw = std::abs ((4.0 / (k * juce::MathConstants<double>::pi))
-                               * std::sin (k * juce::MathConstants<double>::pi * dutyCycle));
+        int n = ap.oscillators[startIndex + h].harmonicNumber;
+        double raw = std::abs ((4.0 / (n * juce::MathConstants<double>::pi))
+                               * std::sin (n * juce::MathConstants<double>::pi * dutyCycle));
+        if (alpha > 0.0)
+            raw /= std::pow ((double) n, alpha);
+
         ap.oscillators[startIndex + h].amplitude = raw;
         maxAmp = std::max (maxAmp, raw);
     }
@@ -2865,6 +2894,63 @@ static void applyPulseWaveToKey (SineLabAudioProcessor& ap, int key, double duty
         for (int h = 0; h < count; ++h)
             ap.oscillators[startIndex + h].amplitude /= maxAmp;
 }
+
+void SineLabAudioProcessorEditor::integralApplied()
+{
+    double alpha = juce::jlimit (0.0, 1.0, integralTextBox.getText().getDoubleValue());
+    integralTextBox.setText (juce::String (alpha, 2), juce::dontSendNotification);
+
+    audioProcessor.lastAppliedIntegralValue = alpha;
+
+    for (int key = 0; key < 88; ++key)
+    {
+        double dc = audioProcessor.keyDutyCycle[key];
+        int startIndex = audioProcessor.keyStartIndex[key];
+        int count      = audioProcessor.harmonicCounts[key];
+
+        if (dc == 0.0 || count <= 0)
+            continue;
+
+        // Recompute the un-integrated pure pulse wave amplitudes for this key
+        std::vector<double> rawAmps (count);
+        double maxRaw = 0.0;
+        for (int h = 0; h < count; ++h)
+        {
+            int n = audioProcessor.oscillators[startIndex + h].harmonicNumber;
+            double raw = std::abs ((4.0 / (n * juce::MathConstants<double>::pi))
+                                   * std::sin (n * juce::MathConstants<double>::pi * dc));
+            rawAmps[h] = raw;
+            maxRaw = std::max (maxRaw, raw);
+        }
+        if (maxRaw <= 0.0)
+            continue;
+        // Normalize to [0,1] the same way applyPulseWaveToKey does
+        for (auto& a : rawAmps)
+            a /= maxRaw;
+
+        // Apply fractional integral: scale harmonic n by 1/n^alpha
+        double maxAmp = 0.0;
+        for (int h = 0; h < count; ++h)
+        {
+            int n = audioProcessor.oscillators[startIndex + h].harmonicNumber;
+            double scaled = rawAmps[h] / std::pow ((double) n, alpha);
+            audioProcessor.oscillators[startIndex + h].amplitude = scaled;
+            maxAmp = std::max (maxAmp, scaled);
+        }
+        // Re-normalize so the loudest harmonic stays at 1 (preserves existing volume behaviour)
+        if (maxAmp > 0.0)
+            for (int h = 0; h < count; ++h)
+                audioProcessor.oscillators[startIndex + h].amplitude /= maxAmp;
+
+        recalculateKeyVolume (key);
+    }
+
+    repaintGraphArea();
+    if (selectedKey != -1)
+        rebuildAmplitudeSliders();
+    integralTextBox.giveAwayKeyboardFocus();
+}
+
 
 void SineLabAudioProcessorEditor::ampA0Applied()
 {
@@ -2875,16 +2961,17 @@ void SineLabAudioProcessorEditor::ampA0Applied()
         int startKey = audioProcessor.lastAppliedAmpStartKey;
         int endKey   = audioProcessor.lastAppliedAmpEndKey;
         double rightVal = juce::jlimit (0.0, 0.5, ampC8TextBox.getText().getDoubleValue());
+        double alpha = juce::jlimit (0.0, 1.0, integralTextBox.getText().getDoubleValue());
         for (int key = 0; key < 88; ++key)
         {
             if (key <= startKey)
             {
-                applyPulseWaveToKey (audioProcessor, key, value);
+                applyPulseWaveToKey (audioProcessor, key, value, alpha);
                 recalculateKeyVolume (key);
             }
             else if (key >= endKey)
             {
-                applyPulseWaveToKey (audioProcessor, key, rightVal);
+                applyPulseWaveToKey (audioProcessor, key, rightVal, alpha);
                 recalculateKeyVolume (key);
             }
         }
@@ -2936,16 +3023,17 @@ void SineLabAudioProcessorEditor::ampC8Applied()
         int startKey = audioProcessor.lastAppliedAmpStartKey;
         int endKey   = audioProcessor.lastAppliedAmpEndKey;
         double leftVal = juce::jlimit (0.0, 0.5, ampA0TextBox.getText().getDoubleValue());
+        double alpha = juce::jlimit (0.0, 1.0, integralTextBox.getText().getDoubleValue());
         for (int key = 0; key < 88; ++key)
         {
             if (key <= startKey)
             {
-                applyPulseWaveToKey (audioProcessor, key, leftVal);
+                applyPulseWaveToKey (audioProcessor, key, leftVal, alpha);
                 recalculateKeyVolume (key);
             }
             else if (key >= endKey)
             {
-                applyPulseWaveToKey (audioProcessor, key, value);
+                applyPulseWaveToKey (audioProcessor, key, value, alpha);
                 recalculateKeyVolume (key);
             }
         }
@@ -2953,6 +3041,7 @@ void SineLabAudioProcessorEditor::ampC8Applied()
         if (selectedKey != -1 && (selectedKey <= startKey || selectedKey >= endKey)) rebuildAmplitudeSliders();
         audioProcessor.lastAppliedAmpC8 = value;
     }
+
     else if (activeAmpSubTab == 2)
     {
         double value = juce::jlimit (0.0, 1.0, ampC8TextBox.getText().getDoubleValue());
@@ -3453,6 +3542,7 @@ void SineLabAudioProcessorEditor::applyShapeToAmp (std::function<double(double)>
     int startKey = audioProcessor.lastAppliedAmpStartKey;
     int endKey   = audioProcessor.lastAppliedAmpEndKey;
     int span     = endKey - startKey;
+    double alpha = juce::jlimit (0.0, 1.0, integralTextBox.getText().getDoubleValue());
     for (int key = 0; key < 88; ++key)
     {
         double D;
@@ -3465,7 +3555,7 @@ void SineLabAudioProcessorEditor::applyShapeToAmp (std::function<double(double)>
             double t = (span > 0) ? ((double)(key - startKey) / span) * 2.0 - 1.0 : -1.0;
             D = a0 + (c8 - a0) * shapeFunction (t);
         }
-        applyPulseWaveToKey (audioProcessor, key, juce::jlimit (0.0, 0.5, D));
+        applyPulseWaveToKey (audioProcessor, key, juce::jlimit (0.0, 0.5, D), alpha);
     }
     for (int key = 0; key < 88; ++key)
         recalculateKeyVolume (key);
@@ -3503,6 +3593,7 @@ void SineLabAudioProcessorEditor::wireShapeButtons()
             int startKey = audioProcessor.lastAppliedAmpStartKey;
             int endKey   = audioProcessor.lastAppliedAmpEndKey;
             int span     = endKey - startKey;
+            double alpha = juce::jlimit (0.0, 1.0, integralTextBox.getText().getDoubleValue());
             for (int key = 0; key < 88; ++key)
             {
                 double D;
@@ -3515,7 +3606,7 @@ void SineLabAudioProcessorEditor::wireShapeButtons()
                     double t = (span > 0) ? (double)(key - startKey)/span*2.0-1.0 : -1.0;
                     D = a0*t*t;
                 }
-                applyPulseWaveToKey (audioProcessor, key, juce::jlimit (0.0, 0.5, D));
+                applyPulseWaveToKey (audioProcessor, key, juce::jlimit (0.0, 0.5, D), alpha);
             }
             for (int key = 0; key < 88; ++key) recalculateKeyVolume (key);
             repaintGraphArea(); if (selectedKey != -1) rebuildAmplitudeSliders();
@@ -3526,6 +3617,7 @@ void SineLabAudioProcessorEditor::wireShapeButtons()
             int startKey = audioProcessor.lastAppliedAmpStartKey;
             int endKey   = audioProcessor.lastAppliedAmpEndKey;
             int span     = endKey - startKey;
+            double alpha = juce::jlimit (0.0, 1.0, integralTextBox.getText().getDoubleValue());
             for (int key = 0; key < 88; ++key)
             {
                 double D;
@@ -3538,11 +3630,13 @@ void SineLabAudioProcessorEditor::wireShapeButtons()
                     double t = (span > 0) ? (double)(key - startKey)/span*2.0-1.0 : -1.0;
                     D = a0*std::abs(t);
                 }
-                applyPulseWaveToKey (audioProcessor, key, juce::jlimit (0.0, 0.5, D));
+                applyPulseWaveToKey (audioProcessor, key, juce::jlimit (0.0, 0.5, D), alpha);
             }
             for (int key = 0; key < 88; ++key) recalculateKeyVolume (key);
             repaintGraphArea(); if (selectedKey != -1) rebuildAmplitudeSliders();
         };
+
+
         expShapeButton.onClick      = [this, makeExpShape] { applyShapeToAmp (makeExpShape (audioProcessor.lastAppliedExpKAmp)); };
     }
     else if (activeTab == 1 && activeAmpSubTab == 2)
@@ -3894,6 +3988,7 @@ void SineLabAudioProcessorEditor::alternateActiveClicked()
 
 void SineLabAudioProcessorEditor::smartPanClicked()
 {
+    double w = audioProcessor.lastAppliedPanWidth;
     for (int key = 0; key < 88; ++key)
     {
         int startIndex = audioProcessor.keyStartIndex[key];
@@ -3901,113 +3996,49 @@ void SineLabAudioProcessorEditor::smartPanClicked()
         if (count <= 0)
             continue;
 
-        double w = audioProcessor.lastAppliedPanWidth;
-
-        // 1. Center the fundamental
         audioProcessor.oscillators[startIndex].pan = 0.0;
         audioProcessor.oscillators[startIndex].needsPanUpdate = true;
 
         if (count < 2)
             continue;
 
-        // 2. Collect active overtones and split into odd/even groups
-        // Active threshold is > 10^-5 (Rule 3)
-        struct OvertoneInfo {
-            int index;
+        struct Overtone {
+            int oscIndex;
             double amplitude;
         };
-        std::vector<OvertoneInfo> activeOdds;
-        std::vector<OvertoneInfo> activeEvens;
-
+        std::vector<Overtone> activeOvertones;
         for (int h = 1; h < count; ++h)
         {
             auto& osc = audioProcessor.oscillators[startIndex + h];
             if (osc.amplitude > 1e-5)
             {
-                int k = osc.harmonicNumber;
-                if (k % 2 != 0)
-                    activeOdds.push_back ({ startIndex + h, osc.amplitude });
-                else
-                    activeEvens.push_back ({ startIndex + h, osc.amplitude });
+                activeOvertones.push_back ({ startIndex + h, osc.amplitude });
             }
         }
 
-        // 3. Process active odd overtones
-        bool oddGroupStartIsLeft = (activeOdds.size() % 2 != 0);
-        if (! activeOdds.empty())
-        {
-            double sumOddL = 0.0;
-            double sumOddR = 0.0;
+        if (activeOvertones.empty())
+            continue;
 
-            // Assign the first odd overtone
-            int firstIdx = activeOdds[0].index;
-            if (oddGroupStartIsLeft)
+        std::sort (activeOvertones.begin(), activeOvertones.end(), [] (const Overtone& a, const Overtone& b) {
+            return a.amplitude > b.amplitude;
+        });
+
+        double leftSum = 0.0;
+        double rightSum = 0.0;
+
+        for (const auto& ov : activeOvertones)
+        {
+            if (leftSum <= rightSum)
             {
-                audioProcessor.oscillators[firstIdx].pan = -w;
-                sumOddL += activeOdds[0].amplitude;
+                audioProcessor.oscillators[ov.oscIndex].pan = -w;
+                leftSum += ov.amplitude;
             }
             else
             {
-                audioProcessor.oscillators[firstIdx].pan = w;
-                sumOddR += activeOdds[0].amplitude;
+                audioProcessor.oscillators[ov.oscIndex].pan = w;
+                rightSum += ov.amplitude;
             }
-            audioProcessor.oscillators[firstIdx].needsPanUpdate = true;
-
-            // Process remaining active odd overtones
-            for (size_t i = 1; i < activeOdds.size(); ++i)
-            {
-                int idx = activeOdds[i].index;
-                if (sumOddL <= sumOddR)
-                {
-                    audioProcessor.oscillators[idx].pan = -w;
-                    sumOddL += activeOdds[i].amplitude;
-                }
-                else
-                {
-                    audioProcessor.oscillators[idx].pan = w;
-                    sumOddR += activeOdds[i].amplitude;
-                }
-                audioProcessor.oscillators[idx].needsPanUpdate = true;
-            }
-        }
-
-        // 4. Process active even overtones
-        bool evenGroupStartIsLeft = !oddGroupStartIsLeft;
-        if (! activeEvens.empty())
-        {
-            double sumEvenL = 0.0;
-            double sumEvenR = 0.0;
-
-            // Assign the first even overtone to the opposite starting side of the odd group
-            int firstIdx = activeEvens[0].index;
-            if (evenGroupStartIsLeft)
-            {
-                audioProcessor.oscillators[firstIdx].pan = -w;
-                sumEvenL += activeEvens[0].amplitude;
-            }
-            else
-            {
-                audioProcessor.oscillators[firstIdx].pan = w;
-                sumEvenR += activeEvens[0].amplitude;
-            }
-            audioProcessor.oscillators[firstIdx].needsPanUpdate = true;
-
-            // Process remaining active even overtones
-            for (size_t i = 1; i < activeEvens.size(); ++i)
-            {
-                int idx = activeEvens[i].index;
-                if (sumEvenL <= sumEvenR)
-                {
-                    audioProcessor.oscillators[idx].pan = -w;
-                    sumEvenL += activeEvens[i].amplitude;
-                }
-                else
-                {
-                    audioProcessor.oscillators[idx].pan = w;
-                    sumEvenR += activeEvens[i].amplitude;
-                }
-                audioProcessor.oscillators[idx].needsPanUpdate = true;
-            }
+            audioProcessor.oscillators[ov.oscIndex].needsPanUpdate = true;
         }
     }
 

@@ -196,6 +196,7 @@ public:
     double lastAppliedSustainC8      = 1.0;
     double lastAppliedReleaseA0      = 0.0;
     double lastAppliedReleaseC8      = 0.0;
+    double lastAppliedIntegralValue  = 0.0;
 
 private:
     double currentSampleRate = 44100.0;
