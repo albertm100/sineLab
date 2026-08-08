@@ -1,5 +1,5 @@
 # sineLab
-sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE, Claude Sonnet 4.6, and Gemini 3.6 Flash (Low). Hear a demo of sineLab here: https://youtu.be/7iIjeCGsYqM?si=Okd8r05ycU0CrXMJ
+sineLab, an additive synthesizer with 12843 sine wave oscillators. Available for free on Github as AU and VST. sineLab is made with JUCE, Claude Sonnet 4.6, and Gemini 3.6 Flash (Low). Hear a demo of sineLab here: https://youtu.be/CqVdYymJHOs?si=Ik961RDyn3DnGs3r
 
 *Note
 sineLab has only been tested using macOS. sineLab is also quite computationally heavy, but this is directly proportional to how many oscillators an active MIDI key has. Further, collapsing the DAW's plugin window for some reason obstructs the PAN and ATTACK tabs. Thus, leaving the window fully expanded results in no obstruction. ALWAYS use a limiter on the master track of your DAW BEFORE working with sineLab. The DAW also takes time to save when sineLab is active, so I try not to quit too fast after pressing save!
